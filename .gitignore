@@ -1,0 +1,26 @@
+# Dependencias
+node_modules/
+**/node_modules/
+
+# Builds
+backend/dist/
+frontend/dist/
+
+# Base de datos SQLite (local/dev) y journals
+*.db
+*.db-journal
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Imagenes subidas (almacenamiento)
+backend/storage/
+
+# Variables de entorno (NUNCA subir secretos)
+.env
+**/.env
+!**/.env.example
+
+# Logs / temporales
+*.log
+npm-debug.log*
+.DS_Store

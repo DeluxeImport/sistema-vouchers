@@ -1,0 +1,20 @@
+{
+  "name": "sistema-vouchers",
+  "version": "1.0.0",
+  "description": "Sistema de Gestion de Vouchers - monorepo (backend + frontend)",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "setup": "npm run install:all && npm --prefix backend run prisma:generate && npm --prefix backend run prisma:migrate -- --name init && npm --prefix backend run seed",
+    "dev": "concurrently -n BACKEND,FRONTEND -c blue,green \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "build": "npm --prefix frontend run build && npm --prefix backend run build",
+    "start": "cross-env NODE_ENV=production npm --prefix backend run start:prod"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3"
+  }
+}

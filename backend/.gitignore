@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+prisma/dev.db
+prisma/dev.db-journal
+storage/vouchers/**/*.jpg
+storage/vouchers/**/*.jpeg
+storage/vouchers/**/*.png
+storage/vouchers/**/*.webp
+storage/vouchers/**/*.heic

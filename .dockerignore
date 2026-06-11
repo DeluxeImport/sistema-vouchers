@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/storage/vouchers/**/*.jpg
+backend/storage/vouchers/**/*.jpeg
+backend/storage/vouchers/**/*.png
+backend/storage/vouchers/**/*.webp
+backend/storage/vouchers/**/*.heic
+**/.env
+.git
+*.log

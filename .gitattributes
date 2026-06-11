@@ -1,0 +1,13 @@
+# Normaliza finales de línea: LF en el repo (ideal para el servidor Linux).
+* text=auto eol=lf
+
+# Scripts de Windows deben conservar CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binarios (por si acaso): sin conversión.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary

@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id            String    @id
+  nombre        String
+  username      String    @unique
+  passwordHash  String    @map("password_hash")
+  rol           String    @default("USUARIO")
+  // CSV de categorias permitidas. null = todas (admin). Vacio = ninguna.
+  categoriasPermitidas String? @map("categorias_permitidas")
+  puedeSubir       Boolean @default(true) @map("puede_subir")
+  puedeVerGaleria  Boolean @default(true) @map("puede_ver_galeria")
+  puedeVerDashboard Boolean @default(true) @map("puede_ver_dashboard")
+  puedeDescargar   Boolean @default(true) @map("puede_descargar")
+  debeCambiar   Boolean   @default(true) @map("debe_cambiar")
+  totpSecret    String?   @map("totp_secret")
+  totpActivo    Boolean   @default(false) @map("totp_activo")
+  backupCodes   String?   @map("backup_codes")
+  intentosFallidos Int    @default(0) @map("intentos_fallidos")
+  bloqueadoHasta DateTime? @map("bloqueado_hasta")
+  ultimoAcceso  DateTime? @map("ultimo_acceso")
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+  actualizado   DateTime  @updatedAt @map("actualizado")
+
+  vouchers Voucher[]
+  sesiones Sesion[]
+  auditLogs AuditLog[]
+
+  @@map("usuarios")
+}
+
+model Voucher {
+  voucherId     String   @id @map("voucher_id")
+  usuarioId     String   @map("usuario_id")
+  categoria     String
+  nombreArchivo String   @map("nombre_archivo")
+  rutaArchivo   String   @map("ruta_archivo")
+  tamanoBytes   Int?     @map("tamano_bytes")
+  formato       String?
+  fechaCarga    DateTime @default(now()) @map("fecha_carga")
+  ipCarga       String?  @map("ip_carga")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([categoria])
+  @@index([usuarioId])
+  @@map("vouchers")
+}
+
+model Contador {
+  categoria    String @id
+  ultimoNumero Int    @default(0) @map("ultimo_numero")
+
+  @@map("contadores")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  usuarioId String?  @map("usuario_id")
+  accion    String
+  ip        String?
+  userAgent String?  @map("user_agent")
+  detalles  String?
+  timestamp DateTime @default(now())
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@map("audit_log")
+}
+
+model Sesion {
+  id        Int      @id @default(autoincrement())
+  usuarioId String   @map("usuario_id")
+  tokenHash String   @map("token_hash")
+  ip        String?
+  userAgent String?  @map("user_agent")
+  expiraEn  DateTime @map("expira_en")
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("sesiones")
+}
