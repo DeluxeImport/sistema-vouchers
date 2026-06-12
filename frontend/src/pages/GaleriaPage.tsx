@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { Link } from "react-router-dom";
+import { api, mensajeError } from "../api/client";
 import AuthImage from "../components/AuthImage";
 import { useAuth } from "../store/auth";
 import { CATEGORIAS, COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
@@ -46,11 +47,12 @@ export default function GaleriaPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [conteos, setConteos] = useState<Record<string, number>>({});
   const [seleccion, setSeleccion] = useState<VoucherItem | null>(null);
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     api.get("/users").then(({ data }) => setUsuarios(data.usuarios));
     api.get("/vouchers/stats").then(({ data }) => setConteos(data.porCategoria));
-  }, []);
+  }, [recarga]);
 
   useEffect(() => {
     sessionStorage.setItem("filtrosGaleria", JSON.stringify(filtros));
@@ -65,7 +67,18 @@ export default function GaleriaPage() {
       setTotal(data.total);
       setTotalPaginas(data.totalPaginas);
     });
-  }, [filtros, page]);
+  }, [filtros, page, recarga]);
+
+  const eliminar = async (id: string) => {
+    if (!confirm("¿Mover este voucher a la papelera? Podrás restaurarlo dentro de los próximos 15 días.")) return;
+    try {
+      await api.delete(`/vouchers/${id}`);
+      setSeleccion(null);
+      setRecarga((r) => r + 1);
+    } catch (e) {
+      alert(mensajeError(e));
+    }
+  };
 
   const cambiar = (campo: string, valor: string) => {
     setPage(1);
@@ -91,7 +104,10 @@ export default function GaleriaPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold text-primario">Galería</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold text-primario">Galería</h1>
+        <Link to="/papelera" className="btn-ghost text-sm whitespace-nowrap">🗑️ Papelera</Link>
+      </div>
 
       {/* Tabs por categoria con conteo */}
       <div className="flex flex-wrap gap-2">
@@ -214,11 +230,19 @@ export default function GaleriaPage() {
                 )}
               </div>
             )}
-            <div className="p-4 border-t flex justify-between items-center">
+            <div className="p-4 border-t flex flex-wrap justify-between items-center gap-2">
               <span className="text-sm text-slate-500">Subido: {new Date(seleccion.fechaCarga).toLocaleString()}</span>
-              {(esAdmin || usuario?.puedeDescargar) && (
-                <button className="btn-primary" onClick={() => descargar(seleccion.voucherId)}>Descargar original</button>
-              )}
+              <div className="flex gap-2 flex-wrap">
+                {(esAdmin || usuario?.puedeDescargar) && (
+                  <button className="btn-primary" onClick={() => descargar(seleccion.voucherId)}>Descargar original</button>
+                )}
+                <button
+                  className="btn bg-red-50 text-red-600 hover:bg-red-100 text-sm"
+                  onClick={() => eliminar(seleccion.voucherId)}
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
           </div>
         </div>

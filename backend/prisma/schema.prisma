@@ -48,12 +48,16 @@ model Voucher {
   // Fecha real del voucher (puede diferir de la fecha de subida) y nota libre.
   fechaVoucher  DateTime? @map("fecha_voucher")
   descripcion   String?
+  // Papelera (soft delete): null = activo. Si tiene fecha, esta en papelera y
+  // se borra definitivamente a los 15 dias.
+  eliminadoEn   DateTime? @map("eliminado_en")
   ipCarga       String?  @map("ip_carga")
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@index([categoria])
   @@index([usuarioId])
+  @@index([eliminadoEn])
   @@map("vouchers")
 }
 

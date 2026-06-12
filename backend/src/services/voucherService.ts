@@ -119,3 +119,29 @@ export async function procesarYGuardar(
 export function rutaAbsolutaVoucher(rutaRelativa: string): string {
   return path.resolve(config.storagePath, rutaRelativa);
 }
+
+// Dias que un voucher permanece en la papelera antes de borrarse para siempre.
+export const DIAS_PAPELERA = 15;
+
+// Borra el archivo fisico de un voucher (no falla si ya no existe).
+export async function borrarArchivoVoucher(rutaRelativa: string): Promise<void> {
+  try {
+    await fs.unlink(rutaAbsolutaVoucher(rutaRelativa));
+  } catch {
+    /* el archivo ya no existe: ignorar */
+  }
+}
+
+// Elimina definitivamente los vouchers con mas de DIAS_PAPELERA en la papelera.
+export async function limpiarPapelera(): Promise<number> {
+  const limite = new Date(Date.now() - DIAS_PAPELERA * 24 * 60 * 60 * 1000);
+  const vencidos = await prisma.voucher.findMany({
+    where: { eliminadoEn: { not: null, lt: limite } },
+    select: { voucherId: true, rutaArchivo: true },
+  });
+  for (const v of vencidos) {
+    await borrarArchivoVoucher(v.rutaArchivo);
+    await prisma.voucher.delete({ where: { voucherId: v.voucherId } });
+  }
+  return vencidos.length;
+}

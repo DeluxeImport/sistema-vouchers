@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { config, CATEGORIAS, type Categoria } from "../config.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { procesarYGuardar, rutaAbsolutaVoucher } from "../services/voucherService.js";
+import { procesarYGuardar, rutaAbsolutaVoucher, borrarArchivoVoucher, DIAS_PAPELERA } from "../services/voucherService.js";
 import { audit, getIp } from "../utils/audit.js";
 
 const router = Router();
@@ -97,7 +97,7 @@ router.get("/", requireAuth, async (req, res) => {
   if (!parse.success) return res.status(400).json({ error: "Parametros invalidos" });
   const q = parse.data;
 
-  const where: any = scopeBase(req);
+  const where: any = { ...scopeBase(req), eliminadoEn: null };
   if (q.categoria && q.categoria.toUpperCase() !== "TODAS") {
     const cat = q.categoria.toUpperCase() as Categoria;
     // Respetamos el scope: si pide una categoria no permitida, no devuelve nada.
@@ -141,7 +141,7 @@ router.get("/stats", requireAuth, async (req, res) => {
   if (!req.usuario!.puedeVerDashboard) {
     return res.status(403).json({ error: "No tienes permiso para ver el dashboard" });
   }
-  const base = scopeBase(req);
+  const base = { ...scopeBase(req), eliminadoEn: null };
   const total = await prisma.voucher.count({ where: base });
   const porCategoria: Record<string, number> = {};
   for (const cat of categoriasVisibles(req)) {
@@ -161,13 +161,13 @@ router.get("/stats/by-user", requireAuth, requireAdmin, async (_req, res) => {
   const usuarios = await prisma.usuario.findMany({ select: { id: true, nombre: true, username: true } });
   const resultado = [];
   for (const u of usuarios) {
-    const total = await prisma.voucher.count({ where: { usuarioId: u.id } });
+    const total = await prisma.voucher.count({ where: { usuarioId: u.id, eliminadoEn: null } });
     const porCategoria: Record<string, number> = {};
     for (const cat of CATEGORIAS) {
-      porCategoria[cat] = await prisma.voucher.count({ where: { usuarioId: u.id, categoria: cat } });
+      porCategoria[cat] = await prisma.voucher.count({ where: { usuarioId: u.id, categoria: cat, eliminadoEn: null } });
     }
     const ultimo = await prisma.voucher.findFirst({
-      where: { usuarioId: u.id },
+      where: { usuarioId: u.id, eliminadoEn: null },
       orderBy: { fechaCarga: "desc" },
       select: { fechaCarga: true },
     });
@@ -182,7 +182,7 @@ router.get("/stats/by-month", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "No tienes permiso para ver el dashboard" });
   }
   const categoria = req.query.categoria ? String(req.query.categoria).toUpperCase() : undefined;
-  const where: any = scopeBase(req);
+  const where: any = { ...scopeBase(req), eliminadoEn: null };
   if (categoria && categoria !== "TODAS") {
     const cat = categoria as Categoria;
     if (req.usuario!.esAdmin || req.usuario!.categorias.includes(cat)) where.categoria = cat;
@@ -209,6 +209,54 @@ router.get("/stats/by-month", requireAuth, async (req, res) => {
     if (m) m.total++;
   }
   return res.json({ meses });
+});
+
+// GET /api/vouchers/papelera  -> vouchers en papelera con dias restantes
+router.get("/papelera", requireAuth, async (req, res) => {
+  if (!req.usuario!.puedeVerGaleria) {
+    return res.status(403).json({ error: "No tienes permiso para ver la galeria" });
+  }
+  const where: any = { ...scopeBase(req), eliminadoEn: { not: null } };
+  const items = await prisma.voucher.findMany({
+    where,
+    orderBy: { eliminadoEn: "desc" },
+    include: { usuario: { select: { id: true, nombre: true, username: true } } },
+  });
+  const ahora = Date.now();
+  const conDias = items.map((v) => {
+    const transcurridoDias = (ahora - v.eliminadoEn!.getTime()) / (24 * 60 * 60 * 1000);
+    return { ...v, diasRestantes: Math.max(0, Math.ceil(DIAS_PAPELERA - transcurridoDias)) };
+  });
+  return res.json({ items: conDias, diasPapelera: DIAS_PAPELERA });
+});
+
+// DELETE /api/vouchers/:id  -> mover a la papelera (soft delete)
+router.delete("/:id", requireAuth, async (req, res) => {
+  const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
+  if (!voucher || !puedeAcceder(req, voucher)) return res.status(404).json({ error: "Voucher no encontrado" });
+  if (voucher.eliminadoEn) return res.status(400).json({ error: "Ya esta en la papelera" });
+  await prisma.voucher.update({ where: { voucherId: voucher.voucherId }, data: { eliminadoEn: new Date() } });
+  await audit(req, "VOUCHER_TRASH", req.usuario!.sub, voucher.voucherId);
+  return res.json({ ok: true });
+});
+
+// POST /api/vouchers/:id/restaurar  -> sacar de la papelera
+router.post("/:id/restaurar", requireAuth, async (req, res) => {
+  const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
+  if (!voucher || !puedeAcceder(req, voucher)) return res.status(404).json({ error: "Voucher no encontrado" });
+  await prisma.voucher.update({ where: { voucherId: voucher.voucherId }, data: { eliminadoEn: null } });
+  await audit(req, "VOUCHER_RESTORE", req.usuario!.sub, voucher.voucherId);
+  return res.json({ ok: true });
+});
+
+// DELETE /api/vouchers/:id/permanente  -> borrar definitivamente (archivo + registro)
+router.delete("/:id/permanente", requireAuth, async (req, res) => {
+  const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
+  if (!voucher || !puedeAcceder(req, voucher)) return res.status(404).json({ error: "Voucher no encontrado" });
+  await borrarArchivoVoucher(voucher.rutaArchivo);
+  await prisma.voucher.delete({ where: { voucherId: voucher.voucherId } });
+  await audit(req, "VOUCHER_DELETE", req.usuario!.sub, voucher.voucherId);
+  return res.json({ ok: true });
 });
 
 // Verifica que el usuario pueda acceder a un voucher concreto.

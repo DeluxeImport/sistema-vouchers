@@ -9,6 +9,7 @@ import { apiLimiter } from "./middleware/rateLimit.js";
 import authRoutes from "./routes/auth.js";
 import voucherRoutes from "./routes/vouchers.js";
 import userRoutes from "./routes/users.js";
+import { limpiarPapelera } from "./services/voucherService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -81,3 +82,16 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 app.listen(config.port, () => {
   console.log(`Backend escuchando en http://localhost:${config.port}`);
 });
+
+// Limpieza de la papelera: borra definitivamente lo que lleva +15 dias.
+// Se ejecuta al arrancar y cada 6 horas.
+async function tareaLimpieza() {
+  try {
+    const n = await limpiarPapelera();
+    if (n > 0) console.log(`Papelera: ${n} voucher(s) eliminados definitivamente.`);
+  } catch (e) {
+    console.error("Error limpiando la papelera:", e);
+  }
+}
+tareaLimpieza();
+setInterval(tareaLimpieza, 6 * 60 * 60 * 1000);

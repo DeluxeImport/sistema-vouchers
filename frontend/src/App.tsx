@@ -9,6 +9,7 @@ import Setup2FAPage from "./pages/Setup2FAPage";
 import DashboardPage from "./pages/DashboardPage";
 import SubirVoucherPage from "./pages/SubirVoucherPage";
 import GaleriaPage from "./pages/GaleriaPage";
+import PapeleraPage from "./pages/PapeleraPage";
 import PerfilPage from "./pages/PerfilPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/" element={<Inicio />} />
         <Route path="/subir" element={<Permitido cond={usuario?.puedeSubir}><SubirVoucherPage /></Permitido>} />
         <Route path="/galeria" element={<Permitido cond={usuario?.puedeVerGaleria}><GaleriaPage /></Permitido>} />
+        <Route path="/papelera" element={<Permitido cond={usuario?.puedeVerGaleria}><PapeleraPage /></Permitido>} />
         <Route path="/admin" element={<Permitido cond={usuario?.esAdmin}><AdminPage /></Permitido>} />
         <Route path="/perfil" element={<PerfilPage />} />
       </Route>
