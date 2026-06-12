@@ -151,11 +151,11 @@ export default function GaleriaPage() {
           </div>
         )}
         <div>
-          <label className="label">Desde</label>
+          <label className="label">Voucher desde</label>
           <input type="date" className="input" value={filtros.fecha_desde} onChange={(e) => cambiar("fecha_desde", e.target.value)} />
         </div>
         <div>
-          <label className="label">Hasta</label>
+          <label className="label">Voucher hasta</label>
           <input type="date" className="input" value={filtros.fecha_hasta} onChange={(e) => cambiar("fecha_hasta", e.target.value)} />
         </div>
         <div className="flex items-end">

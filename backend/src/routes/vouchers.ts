@@ -105,18 +105,35 @@ router.get("/", requireAuth, async (req, res) => {
     else where.categoria = "__none__";
   }
   if (q.usuario_id && req.usuario!.esAdmin) where.usuarioId = q.usuario_id;
+
+  // Combinamos los grupos OR (busqueda y fecha) con AND para que no se pisen.
+  const and: any[] = [];
+
   // Busca por ID (en mayusculas) o dentro de la nota/descripcion.
   if (q.voucher_id) {
-    where.OR = [
-      { voucherId: { contains: q.voucher_id.toUpperCase() } },
-      { descripcion: { contains: q.voucher_id } },
-    ];
+    and.push({
+      OR: [
+        { voucherId: { contains: q.voucher_id.toUpperCase() } },
+        { descripcion: { contains: q.voucher_id } },
+      ],
+    });
   }
+
+  // Filtro por la FECHA DEL VOUCHER (la real, no la de subida). Si el voucher
+  // no tiene fecha propia (subido antes de esta funcion), se usa la de carga.
   if (q.fecha_desde || q.fecha_hasta) {
-    where.fechaCarga = {};
-    if (q.fecha_desde) where.fechaCarga.gte = new Date(q.fecha_desde + "T00:00:00");
-    if (q.fecha_hasta) where.fechaCarga.lte = new Date(q.fecha_hasta + "T23:59:59");
+    const rango: any = {};
+    if (q.fecha_desde) rango.gte = new Date(q.fecha_desde + "T00:00:00");
+    if (q.fecha_hasta) rango.lte = new Date(q.fecha_hasta + "T23:59:59");
+    and.push({
+      OR: [
+        { fechaVoucher: rango },
+        { fechaVoucher: null, fechaCarga: rango },
+      ],
+    });
   }
+
+  if (and.length) where.AND = and;
 
   const total = await prisma.voucher.count({ where });
   const items = await prisma.voucher.findMany({
