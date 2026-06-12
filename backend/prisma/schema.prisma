@@ -45,6 +45,9 @@ model Voucher {
   tamanoBytes   Int?     @map("tamano_bytes")
   formato       String?
   fechaCarga    DateTime @default(now()) @map("fecha_carga")
+  // Fecha real del voucher (puede diferir de la fecha de subida) y nota libre.
+  fechaVoucher  DateTime? @map("fecha_voucher")
+  descripcion   String?
   ipCarga       String?  @map("ip_carga")
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])

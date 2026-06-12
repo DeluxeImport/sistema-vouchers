@@ -8,7 +8,16 @@ interface VoucherItem {
   voucherId: string;
   categoria: Categoria;
   fechaCarga: string;
+  fechaVoucher?: string | null;
+  descripcion?: string | null;
   usuario: { id: string; nombre: string };
+}
+
+// Fecha YYYY-MM-DD o ISO -> dd/mm/aaaa (sin que el huso la corra un dia).
+function fmtFecha(f?: string | null): string {
+  if (!f) return "—";
+  const d = new Date(f);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
 interface Usuario { id: string; nombre: string }
 
@@ -113,8 +122,8 @@ export default function GaleriaPage() {
       {/* Filtros */}
       <div className="card grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <div>
-          <label className="label">Buscar por ID</label>
-          <input className="input" placeholder="Ej: CP000" value={filtros.voucher_id} onChange={(e) => cambiar("voucher_id", e.target.value)} />
+          <label className="label">Buscar (ID o nota)</label>
+          <input className="input" placeholder="Ej: CP000 o 'luz'" value={filtros.voucher_id} onChange={(e) => cambiar("voucher_id", e.target.value)} />
         </div>
         {esAdmin && (
           <div>
@@ -155,7 +164,14 @@ export default function GaleriaPage() {
                 </span>
               </div>
               <div className="text-sm mt-1">{v.usuario.nombre}</div>
-              <div className="text-xs text-slate-400">{new Date(v.fechaCarga).toLocaleDateString()}</div>
+              {v.descripcion && (
+                <div className="text-xs text-slate-600 mt-1 line-clamp-2" title={v.descripcion}>
+                  {v.descripcion}
+                </div>
+              )}
+              <div className="text-xs text-slate-400 mt-1">
+                {v.fechaVoucher ? `Voucher: ${fmtFecha(v.fechaVoucher)}` : `Subido: ${fmtFecha(v.fechaCarga)}`}
+              </div>
             </div>
           </div>
         ))}
@@ -188,8 +204,18 @@ export default function GaleriaPage() {
             <div className="p-4">
               <AuthImage voucherId={seleccion.voucherId} className="w-full object-contain max-h-[60vh]" />
             </div>
+            {(seleccion.fechaVoucher || seleccion.descripcion) && (
+              <div className="px-4 pb-2 space-y-1 text-sm">
+                {seleccion.fechaVoucher && (
+                  <div><span className="text-slate-400">Fecha del voucher:</span> {fmtFecha(seleccion.fechaVoucher)}</div>
+                )}
+                {seleccion.descripcion && (
+                  <div><span className="text-slate-400">Nota:</span> {seleccion.descripcion}</div>
+                )}
+              </div>
+            )}
             <div className="p-4 border-t flex justify-between items-center">
-              <span className="text-sm text-slate-500">{new Date(seleccion.fechaCarga).toLocaleString()}</span>
+              <span className="text-sm text-slate-500">Subido: {new Date(seleccion.fechaCarga).toLocaleString()}</span>
               {(esAdmin || usuario?.puedeDescargar) && (
                 <button className="btn-primary" onClick={() => descargar(seleccion.voucherId)}>Descargar original</button>
               )}

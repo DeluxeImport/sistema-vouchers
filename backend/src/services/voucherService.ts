@@ -39,6 +39,11 @@ export interface ArchivoSubido {
   size: number;
 }
 
+export interface MetadatosVoucher {
+  fechaVoucher?: Date | null;
+  descripcion?: string | null;
+}
+
 export interface ResultadoCarga {
   voucherId: string;
   usuarioId: string;
@@ -48,6 +53,8 @@ export interface ResultadoCarga {
   tamanoBytes: number;
   formato: string;
   fechaCarga: Date;
+  fechaVoucher: Date | null;
+  descripcion: string | null;
 }
 
 // Guarda la imagen en disco con la nomenclatura [ID]_[USERID]_[YYYYMMDD].[ext]
@@ -56,7 +63,8 @@ export async function procesarYGuardar(
   archivo: ArchivoSubido,
   categoria: Categoria,
   usuarioId: string,
-  ip: string
+  ip: string,
+  meta: MetadatosVoucher = {}
 ): Promise<ResultadoCarga> {
   const voucherId = await generarVoucherId(categoria);
   let ext = extDesdeMime(archivo.mimetype);
@@ -88,6 +96,8 @@ export async function procesarYGuardar(
       rutaArchivo: rutaRelativa,
       tamanoBytes: buffer.length,
       formato: ext,
+      fechaVoucher: meta.fechaVoucher ?? null,
+      descripcion: meta.descripcion?.trim() || null,
       ipCarga: ip,
     },
   });
@@ -101,6 +111,8 @@ export async function procesarYGuardar(
     tamanoBytes: voucher.tamanoBytes ?? buffer.length,
     formato: voucher.formato ?? ext,
     fechaCarga: voucher.fechaCarga,
+    fechaVoucher: voucher.fechaVoucher,
+    descripcion: voucher.descripcion,
   };
 }
 

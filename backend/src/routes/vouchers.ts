@@ -50,15 +50,28 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
   const archivos = (req.files as Express.Multer.File[]) ?? [];
   if (archivos.length === 0) return res.status(400).json({ error: "Debe subir al menos una imagen" });
 
+  // Metadata por foto (en el mismo orden que las imagenes): [{fecha, descripcion}, ...]
+  let metadatos: { fecha?: string; descripcion?: string }[] = [];
+  try {
+    if (req.body.metadatos) metadatos = JSON.parse(String(req.body.metadatos));
+  } catch {
+    metadatos = [];
+  }
+
   const usuarioId = req.usuario!.sub;
   const ip = getIp(req);
   const resultados = [];
-  for (const a of archivos) {
+  for (let i = 0; i < archivos.length; i++) {
+    const a = archivos[i];
+    const m = metadatos[i] ?? {};
+    // Construimos la fecha a mediodia local para evitar que el huso horario la corra un dia.
+    const fechaVoucher = m.fecha ? new Date(`${m.fecha}T12:00:00`) : null;
     const r = await procesarYGuardar(
       { buffer: a.buffer, mimetype: a.mimetype, size: a.size },
       categoria,
       usuarioId,
-      ip
+      ip,
+      { fechaVoucher: isNaN(fechaVoucher?.getTime() ?? NaN) ? null : fechaVoucher, descripcion: m.descripcion }
     );
     resultados.push(r);
   }
@@ -92,7 +105,13 @@ router.get("/", requireAuth, async (req, res) => {
     else where.categoria = "__none__";
   }
   if (q.usuario_id && req.usuario!.esAdmin) where.usuarioId = q.usuario_id;
-  if (q.voucher_id) where.voucherId = { contains: q.voucher_id.toUpperCase() };
+  // Busca por ID (en mayusculas) o dentro de la nota/descripcion.
+  if (q.voucher_id) {
+    where.OR = [
+      { voucherId: { contains: q.voucher_id.toUpperCase() } },
+      { descripcion: { contains: q.voucher_id } },
+    ];
+  }
   if (q.fecha_desde || q.fecha_hasta) {
     where.fechaCarga = {};
     if (q.fecha_desde) where.fechaCarga.gte = new Date(q.fecha_desde + "T00:00:00");
