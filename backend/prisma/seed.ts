@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import { generarPasswordTemporal, hashPassword } from "../src/services/authService.js";
 
 const prisma = new PrismaClient();
 
@@ -22,10 +22,10 @@ async function main() {
     });
   }
 
-  // Usuarios con contrasena por defecto Voucher2024_[username]
+  // Usuarios con contrasena temporal aleatoria, impresa solo al crearse.
   for (const u of USUARIOS) {
-    const passwordPlano = `Voucher2024_${u.username}`;
-    const passwordHash = await bcrypt.hash(passwordPlano, 12);
+    const passwordPlano = generarPasswordTemporal();
+    const passwordHash = await hashPassword(passwordPlano);
     const esAdmin = u.rol === "ADMIN";
     await prisma.usuario.upsert({
       where: { id: u.id },
@@ -43,7 +43,7 @@ async function main() {
         totpActivo: false,
       },
     });
-    console.log(`Usuario ${u.username} (${u.rol}) -> contrasena por defecto: ${passwordPlano}`);
+    console.log(`Usuario ${u.username} (${u.rol}) -> contrasena temporal: ${passwordPlano}`);
   }
 
   console.log("\nSeed completado.");

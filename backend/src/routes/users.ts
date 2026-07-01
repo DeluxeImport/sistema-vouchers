@@ -2,9 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { hashPassword } from "../services/authService.js";
+import { generarPasswordTemporal, hashPassword } from "../services/authService.js";
 import { categoriasACsv, ROL_ADMIN } from "../utils/permisos.js";
 import { audit } from "../utils/audit.js";
+import { revocarSesionesDeUsuario } from "../application/auth/sessionUseCases.js";
+import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
 
 const router = Router();
 
@@ -76,7 +78,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   if (existe) return res.status(409).json({ error: "El nombre de usuario ya existe" });
 
   const id = await siguienteId();
-  const passwordTemporal = `Voucher2024_${username}`;
+  const passwordTemporal = generarPasswordTemporal();
   const passwordHash = await hashPassword(passwordTemporal);
   const esAdminNuevo = b.rol === ROL_ADMIN;
 
@@ -139,12 +141,13 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
 router.post("/:id/reset-password", requireAuth, requireAdmin, async (req, res) => {
   const usuario = await prisma.usuario.findUnique({ where: { id: req.params.id } });
   if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
-  const passwordTemporal = `Voucher2024_${usuario.username}`;
+  const passwordTemporal = generarPasswordTemporal();
   const passwordHash = await hashPassword(passwordTemporal);
   await prisma.usuario.update({
     where: { id: usuario.id },
     data: { passwordHash, debeCambiar: true, intentosFallidos: 0, bloqueadoHasta: null },
   });
+  await revocarSesionesDeUsuario(prismaSessionRepository, usuario.id);
   await audit(req, "USER_RESET_PWD", req.usuario!.sub, `reseteo password de ${usuario.id}`);
   return res.json({ ok: true, passwordTemporal });
 });

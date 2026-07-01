@@ -92,10 +92,10 @@ npm --prefix backend run deploy:prod      # aplica migraciones + crea el admin
 ```
 
 `deploy:prod` aplica las migraciones y ejecuta el seed, que crea **solo** la
-cuenta administradora:
+cuenta administradora cuando no existe:
 
 - Usuario: `usuario1`
-- Contraseña temporal: `Voucher2024_usuario1`
+- Contraseña temporal: se imprime una sola vez en la salida del seed.
 
 ---
 
@@ -148,7 +148,7 @@ En el sitio de aaPanel → **SSL → Let's Encrypt** → emite el certificado y 
 ## 8. Primer ingreso y puesta en marcha
 
 1. Abre `https://vouchers.tudominio.com`.
-2. Entra con `usuario1` / `Voucher2024_usuario1`.
+2. Entra con `usuario1` y la contraseña temporal impresa por el seed.
 3. El sistema obliga a **cambiar la contraseña** y **configurar 2FA** (escanea el
    QR con tu app autenticadora y **guarda los códigos de respaldo**).
 4. Ve a **Administración** y crea los usuarios reales, asignando categorías y
