@@ -71,7 +71,10 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     return res.status(413).json({ error: "Archivo demasiado grande (max 10 MB)" });
   }
   if (err?.code === "LIMIT_FILE_COUNT") {
-    return res.status(400).json({ error: "Maximo 5 imagenes por carga" });
+    return res.status(400).json({ error: "Maximo 5 archivos por carga" });
+  }
+  if (typeof err?.message === "string" && err.message.startsWith("Formato no permitido")) {
+    return res.status(400).json({ error: err.message });
   }
   console.error(err);
   // No exponer detalles internos al cliente en produccion.

@@ -28,18 +28,17 @@ Estado tras la auditoría: **listo para despliegue en producción** (aaPanel).
   acceso a imágenes/descarga validado por dueño+categoría. `requireAuth` recarga
   el usuario en cada petición (cambios de permiso aplican al instante).
 - **Inyección SQL**: Prisma parametriza todas las consultas.
-- **Subida de archivos**: validación de MIME, límite de tamaño (10 MB) y de
-  cantidad (5), nombres generados por el servidor (sin path traversal),
-  recompresión con sharp para imágenes grandes.
+- **Subida de archivos**: validación de MIME y firma real (*magic bytes*) para
+  imágenes/PDF, límite de tamaño (10 MB) y de cantidad (5), nombres generados
+  por el servidor (sin path traversal), recompresión con sharp para imágenes
+  grandes.
 - **Auditoría**: tabla `audit_log` registra login, cambios, altas/bajas, etc.
 
 ### Recomendaciones (opcionales, no bloqueantes)
-- **R1**: validar *magic bytes* del archivo (no solo el MIME) para rechazar
-  ficheros con extensión/MIME falsificados (<5 MB hoy se guardan sin reprocesar).
-- **R2**: backups automáticos de `data/` (BD + imágenes) — incluido en la guía.
-- **R3**: si se requiere revocación inmediata de sesiones, invalidar el token en
+- **R1**: backups automáticos de `data/` (BD + imágenes/PDF) — incluido en la guía.
+- **R2**: si se requiere revocación inmediata de sesiones, invalidar el token en
   `logout` (hoy expira por tiempo, 8 h).
-- **R4**: ante mucho tráfico, considerar Postgres en lugar de SQLite (1 escritor).
+- **R3**: ante mucho tráfico, considerar Postgres en lugar de SQLite (1 escritor).
 
 ---
 

@@ -22,21 +22,51 @@ function fechaYYYYMMDD(d = new Date()): string {
   return `${y}${m}${day}`;
 }
 
-function extDesdeMime(mime: string): string {
+export function extDesdeMime(mime: string): string {
   const map: Record<string, string> = {
     "image/jpeg": "jpg",
     "image/jpg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
     "image/heic": "heic",
+    "application/pdf": "pdf",
   };
   return map[mime] ?? "jpg";
+}
+
+export function validarMagicBytes(buffer: Buffer, ext: string): boolean {
+  if (ext === "pdf") return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (ext === "jpg") return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (ext === "png") return buffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  if (ext === "webp") {
+    return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+  if (ext === "heic") return buffer.subarray(4, 8).toString("ascii") === "ftyp";
+  return false;
 }
 
 export interface ArchivoSubido {
   buffer: Buffer;
   mimetype: string;
   size: number;
+}
+
+export async function prepararArchivoParaGuardar(archivo: ArchivoSubido): Promise<{ buffer: Buffer; ext: string }> {
+  const ext = extDesdeMime(archivo.mimetype);
+  if (!validarMagicBytes(archivo.buffer, ext)) {
+    throw new Error("El contenido del archivo no coincide con el formato declarado");
+  }
+  if (ext === "pdf") return { buffer: archivo.buffer, ext };
+
+  let buffer = archivo.buffer;
+  // Compresion del lado del servidor para imagenes grandes (>5MB), excepto HEIC.
+  if (ext !== "heic" && archivo.size > 5 * 1024 * 1024) {
+    buffer = await sharp(archivo.buffer)
+      .resize({ width: 2000, withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+  }
+  return { buffer, ext };
 }
 
 export interface MetadatosVoucher {
@@ -57,7 +87,7 @@ export interface ResultadoCarga {
   descripcion: string | null;
 }
 
-// Guarda la imagen en disco con la nomenclatura [ID]_[USERID]_[YYYYMMDD].[ext]
+// Guarda el archivo en disco con la nomenclatura [ID]_[USERID]_[YYYYMMDD].[ext]
 // y registra la metadata en BD.
 export async function procesarYGuardar(
   archivo: ArchivoSubido,
@@ -67,7 +97,8 @@ export async function procesarYGuardar(
   meta: MetadatosVoucher = {}
 ): Promise<ResultadoCarga> {
   const voucherId = await generarVoucherId(categoria);
-  let ext = extDesdeMime(archivo.mimetype);
+  const preparado = await prepararArchivoParaGuardar(archivo);
+  const ext = preparado.ext;
   const carpeta = CARPETAS[categoria];
   const dir = path.resolve(config.storagePath, carpeta);
   await fs.mkdir(dir, { recursive: true });
@@ -75,14 +106,7 @@ export async function procesarYGuardar(
   const nombreArchivo = `${voucherId}_${usuarioId}_${fechaYYYYMMDD()}.${ext}`;
   const rutaAbs = path.join(dir, nombreArchivo);
 
-  let buffer = archivo.buffer;
-  // Compresion del lado del servidor para imagenes grandes (>5MB), excepto HEIC.
-  if (ext !== "heic" && archivo.size > 5 * 1024 * 1024) {
-    buffer = await sharp(archivo.buffer)
-      .resize({ width: 2000, withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-  }
+  const buffer = preparado.buffer;
   await fs.writeFile(rutaAbs, buffer);
 
   const rutaRelativa = path.join(carpeta, nombreArchivo).replace(/\\/g, "/");

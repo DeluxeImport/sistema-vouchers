@@ -203,20 +203,171 @@ function TarjetaSubida({ titulo, categorias, sustantivo }: TarjetaProps) {
   );
 }
 
+function TarjetaFacturasPdf() {
+  const [items, setItems] = useState<ItemSubida[]>([]);
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [resultado, setResultado] = useState<{ voucherId: string }[] | null>(null);
+
+  const onDrop = useCallback((aceptados: File[]) => {
+    setItems((prev) =>
+      [
+        ...prev,
+        ...aceptados.map((file) => ({
+          file,
+          fecha: fechaHoy(),
+          descripcion: file.name.replace(/\.pdf$/i, ""),
+        })),
+      ].slice(0, 5)
+    );
+    setError("");
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { "application/pdf": [".pdf"] },
+    maxSize: 10 * 1024 * 1024,
+    maxFiles: 5,
+  });
+
+  const quitar = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const actualizar = (i: number, campo: "fecha" | "descripcion", valor: string) =>
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [campo]: valor } : it)));
+
+  const subir = async () => {
+    if (items.length === 0) return setError("Agrega al menos un PDF");
+    setError("");
+    setCargando(true);
+    try {
+      const fd = new FormData();
+      fd.append("categoria", "FACTURA");
+      items.forEach((it) => fd.append("imagenes", it.file));
+      fd.append("metadatos", JSON.stringify(items.map((it) => ({ fecha: it.fecha, descripcion: it.descripcion }))));
+      const { data } = await api.post("/vouchers/upload", fd);
+      setResultado(data.vouchers);
+      setItems([]);
+    } catch (err) {
+      setError(mensajeError(err));
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-primario">Facturas electronicas (PDF)</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Sube aqui archivos PDF de facturas electronicas sin tomar capturas.
+        </p>
+      </div>
+
+      {resultado && (
+        <div className="card bg-green-50 border-green-200">
+          <h3 className="font-semibold text-green-800 mb-2">PDF cargado correctamente</h3>
+          <div className="flex flex-wrap gap-2">
+            {resultado.map((r) => (
+              <span key={r.voucherId} className="font-mono bg-white border border-green-300 px-3 py-1 rounded">
+                {r.voucherId}
+              </span>
+            ))}
+          </div>
+          <button className="btn-ghost mt-3" onClick={() => setResultado(null)}>Subir mas PDF</button>
+        </div>
+      )}
+
+      {error && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</div>}
+
+      <div className="card space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <label className="label">Categoria</label>
+            <span className="inline-flex items-center rounded-lg border-2 px-4 py-2 text-sm font-medium text-white bg-[#DB2777] border-[#DB2777]">
+              Factura
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">PDF - max 10 MB c/u - hasta 5 archivos</span>
+        </div>
+
+        <div>
+          <label className="label">Archivos PDF</label>
+          <div
+            {...getRootProps()}
+            className={`rounded-lg border-2 border-dashed p-8 text-center cursor-pointer transition ${
+              isDragActive ? "border-red-400 bg-red-50" : "border-slate-300"
+            }`}
+          >
+            <input {...getInputProps()} />
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded bg-red-50 text-red-600 font-bold">
+              PDF
+            </div>
+            <p className="text-slate-500">
+              {isDragActive ? "Suelta los PDF aqui..." : "Arrastra facturas PDF o haz clic para seleccionar"}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">Solo PDF de facturas electronicas</p>
+          </div>
+        </div>
+
+        {items.length > 0 && (
+          <div className="space-y-3">
+            <label className="label">Datos de cada factura</label>
+            {items.map((it, i) => (
+              <div key={`${it.file.name}-${i}`} className="grid gap-3 border border-slate-200 rounded-lg p-3 sm:grid-cols-[1fr_160px_32px]">
+                <div>
+                  <div className="text-sm font-medium text-slate-700 truncate">{it.file.name}</div>
+                  <label className="label text-xs mt-2">Proveedor / RUC / nota</label>
+                  <input
+                    className="input"
+                    placeholder="Ej: proveedor, RUC, serie o numero"
+                    value={it.descripcion}
+                    onChange={(e) => actualizar(i, "descripcion", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Fecha de factura</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={it.fecha}
+                    onChange={(e) => actualizar(i, "fecha", e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={() => quitar(i)}
+                  className="self-start bg-red-500 text-white rounded-full w-6 h-6 text-xs"
+                  title="Quitar"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button className="btn-primary w-full" onClick={subir} disabled={cargando}>
+          {cargando ? "Subiendo PDF..." : `Subir ${items.length || ""} PDF`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SubirVoucherPage() {
   const usuario = useAuth((s) => s.usuario);
   const permitidas = new Set(usuario?.categorias ?? []);
   const vouchers = CATEGORIAS_VOUCHER.filter((c) => permitidas.has(c)) as Categoria[];
   const documentos = CATEGORIAS_DOCUMENTO.filter((c) => permitidas.has(c)) as Categoria[];
+  const puedeSubirFacturasPdf = permitidas.has("FACTURA");
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="space-y-8 max-w-3xl">
       {vouchers.length > 0 && (
         <TarjetaSubida titulo="Subir Voucher" categorias={vouchers} sustantivo="voucher" />
       )}
       {documentos.length > 0 && (
         <TarjetaSubida titulo="Subir Documento" categorias={documentos} sustantivo="documento" />
       )}
+      {puedeSubirFacturasPdf && <TarjetaFacturasPdf />}
       {vouchers.length === 0 && documentos.length === 0 && (
         <div className="card text-slate-500">No tienes categorías habilitadas para subir. Contacta al administrador.</div>
       )}
