@@ -7,6 +7,10 @@ export function hashPassword(plano: string): Promise<string> {
   return bcrypt.hash(plano, BCRYPT_COST);
 }
 
+export function generarPasswordTemporal(): string {
+  return `Tmp-${crypto.randomBytes(12).toString("base64url")}!7Aa`;
+}
+
 export function compararPassword(plano: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plano, hash);
 }

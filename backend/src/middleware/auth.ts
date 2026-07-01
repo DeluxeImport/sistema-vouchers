@@ -1,8 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { config, type Categoria } from "../config.js";
-import { prisma } from "../db.js";
+import { prismaAuthUserRepository } from "../repositories/prismaAuthUserRepository.js";
+import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
+import { validarSesionActiva, type SessionRepository } from "../application/auth/sessionUseCases.js";
+import type { AuthUserRecord, AuthUserRepository } from "../application/auth/authUserRepository.js";
 import { categoriasDe, esAdmin } from "../utils/permisos.js";
+
+export type { AuthUserRecord, AuthUserRepository } from "../application/auth/authUserRepository.js";
 
 export interface TokenPayload {
   sub: string;
@@ -27,6 +32,7 @@ declare global {
   namespace Express {
     interface Request {
       usuario?: UsuarioAuth;
+      authToken?: string;
     }
   }
 }
@@ -50,39 +56,57 @@ export function verificarToken2FA(token: string): string | null {
   }
 }
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-  if (!token) {
-    return res.status(401).json({ error: "No autenticado" });
-  }
-  let payload: TokenPayload & { paso?: string };
-  try {
-    payload = jwt.verify(token, config.jwtSecret) as TokenPayload & { paso?: string };
-  } catch {
-    return res.status(401).json({ error: "Token invalido o expirado" });
-  }
-  if (payload.paso === "2fa") {
-    return res.status(401).json({ error: "Token incompleto, falta verificar 2FA" });
-  }
+export function createRequireAuth(deps: {
+  jwtSecret: string;
+  sessionRepository: SessionRepository;
+  userRepository: AuthUserRepository;
+}) {
+  return async function requireAuth(req: Request, res: Response, next: NextFunction) {
+    const header = req.headers.authorization;
+    const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+    if (!token) {
+      return res.status(401).json({ error: "No autenticado" });
+    }
+    let payload: TokenPayload & { paso?: string };
+    try {
+      payload = jwt.verify(token, deps.jwtSecret) as TokenPayload & { paso?: string };
+    } catch {
+      return res.status(401).json({ error: "Token invalido o expirado" });
+    }
+    if (payload.paso === "2fa") {
+      return res.status(401).json({ error: "Token incompleto, falta verificar 2FA" });
+    }
 
-  // Cargamos el usuario fresco para que cambios de rol/permisos apliquen al instante.
-  const u = await prisma.usuario.findUnique({ where: { id: payload.sub } });
-  if (!u) return res.status(401).json({ error: "Usuario no encontrado" });
+    const sesion = await validarSesionActiva(deps.sessionRepository, token, payload.sub);
+    if (!sesion) {
+      return res.status(401).json({ error: "Sesion expirada o revocada" });
+    }
 
-  req.usuario = {
-    sub: u.id,
-    username: u.username,
-    rol: u.rol,
-    esAdmin: esAdmin(u),
-    categorias: categoriasDe(u),
-    puedeSubir: u.puedeSubir,
-    puedeVerGaleria: u.puedeVerGaleria,
-    puedeVerDashboard: u.puedeVerDashboard,
-    puedeDescargar: u.puedeDescargar,
+    // Cargamos el usuario fresco para que cambios de rol/permisos apliquen al instante.
+    const u = await deps.userRepository.findById(payload.sub);
+    if (!u) return res.status(401).json({ error: "Usuario no encontrado" });
+
+    req.authToken = token;
+    req.usuario = {
+      sub: u.id,
+      username: u.username,
+      rol: u.rol,
+      esAdmin: esAdmin(u),
+      categorias: categoriasDe(u),
+      puedeSubir: u.puedeSubir,
+      puedeVerGaleria: u.puedeVerGaleria,
+      puedeVerDashboard: u.puedeVerDashboard,
+      puedeDescargar: u.puedeDescargar,
+    };
+    next();
   };
-  next();
 }
+
+export const requireAuth = createRequireAuth({
+  jwtSecret: config.jwtSecret,
+  sessionRepository: prismaSessionRepository,
+  userRepository: prismaAuthUserRepository,
+});
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.usuario?.esAdmin) {

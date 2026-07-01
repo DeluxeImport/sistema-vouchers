@@ -20,6 +20,8 @@ import {
 } from "../services/authService.js";
 import { audit, getIp } from "../utils/audit.js";
 import { categoriasDe, esAdmin } from "../utils/permisos.js";
+import { crearSesion, revocarSesionesDeUsuario, revocarToken } from "../application/auth/sessionUseCases.js";
+import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
 
 const router = Router();
 
@@ -180,6 +182,7 @@ router.put("/change-password", requireAuth, async (req, res) => {
     where: { id: usuario.id },
     data: { passwordHash, debeCambiar: false },
   });
+  await revocarSesionesDeUsuario(prismaSessionRepository, usuario.id, req.authToken);
   await audit(req, "PASSWORD_CHANGE", usuario.id);
   return res.json({ ok: true, debeCambiar: false });
 });
@@ -231,8 +234,10 @@ router.post("/confirm-2fa", requireAuth, async (req, res) => {
 
 // POST /api/auth/logout
 router.post("/logout", requireAuth, async (req, res) => {
+  if (req.authToken) {
+    await revocarToken(prismaSessionRepository, req.authToken);
+  }
   await audit(req, "LOGOUT", req.usuario!.sub);
-  // Las sesiones se limpian de forma natural por expiracion; aqui registramos el evento.
   return res.json({ ok: true });
 });
 
@@ -263,10 +268,11 @@ function perfilPublico(u: {
 }
 
 async function registrarSesion(usuarioId: string, token: string, req: any) {
-  const expira = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  const tokenHash = hashBackupCode(token);
-  await prisma.sesion.create({
-    data: { usuarioId, tokenHash, ip: getIp(req), userAgent: req.headers["user-agent"] ?? null, expiraEn: expira },
+  await crearSesion(prismaSessionRepository, {
+    usuarioId,
+    token,
+    ip: getIp(req),
+    userAgent: req.headers["user-agent"] ?? null,
   });
 }
 

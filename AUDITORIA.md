@@ -37,9 +37,7 @@ Estado tras la auditoría: **listo para despliegue en producción** (aaPanel).
 - **R1**: validar *magic bytes* del archivo (no solo el MIME) para rechazar
   ficheros con extensión/MIME falsificados (<5 MB hoy se guardan sin reprocesar).
 - **R2**: backups automáticos de `data/` (BD + imágenes) — incluido en la guía.
-- **R3**: si se requiere revocación inmediata de sesiones, invalidar el token en
-  `logout` (hoy expira por tiempo, 8 h).
-- **R4**: ante mucho tráfico, considerar Postgres en lugar de SQLite (1 escritor).
+- **R3**: ante mucho tráfico, considerar Postgres en lugar de SQLite (1 escritor).
 
 ---
 
@@ -48,6 +46,7 @@ Estado tras la auditoría: **listo para despliegue en producción** (aaPanel).
 | Estado | Punto |
 |--------|-------|
 | ✅ | **TypeScript estricto** (`strict: true`) en backend y frontend; compila sin errores ni warnings de tipos. |
+| ✅ | **Sesiones revocables**: el JWT debe existir en la tabla `sesiones`; `logout` y reset de contraseña invalidan tokens activos. |
 | ✅ | **Bundle del frontend dividido** en chunks (`react`, `charts`, app) — se eliminó el aviso de "chunk > 500 kB" y mejora el cacheo. |
 | ✅ | **0 vulnerabilidades** en `npm audit` (backend producción y frontend). |
 | ✅ | Separación de responsabilidades: `config`, `middleware`, `services`, `routes`, `utils`. |
