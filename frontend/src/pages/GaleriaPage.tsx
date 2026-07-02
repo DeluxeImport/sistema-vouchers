@@ -8,10 +8,40 @@ import { CATEGORIAS, COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "..
 interface VoucherItem {
   voucherId: string;
   categoria: Categoria;
+  formato?: string | null;
+  nombreArchivo?: string;
   fechaCarga: string;
   fechaVoucher?: string | null;
   descripcion?: string | null;
   usuario: { id: string; nombre: string };
+}
+
+function esPdf(v: VoucherItem): boolean {
+  return v.formato?.toLowerCase() === "pdf";
+}
+
+function PdfPreview({ voucherId }: { voucherId: string }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    let activo = true;
+    let objectUrl = "";
+    api
+      .get(`/vouchers/${voucherId}/file`, { responseType: "blob" })
+      .then(({ data }) => {
+        if (!activo) return;
+        objectUrl = URL.createObjectURL(data);
+        setUrl(objectUrl);
+      })
+      .catch(() => {});
+    return () => {
+      activo = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [voucherId]);
+
+  if (!url) return <div className="h-[60vh] bg-slate-100 animate-pulse rounded" />;
+  return <iframe src={url} title={voucherId} className="w-full h-[60vh] rounded border border-slate-200" />;
 }
 
 // Fecha YYYY-MM-DD o ISO -> dd/mm/aaaa (sin que el huso la corra un dia).
@@ -92,12 +122,12 @@ export default function GaleriaPage() {
 
   const totalGeneral = Object.values(conteos).reduce((a, b) => a + b, 0);
 
-  const descargar = async (id: string) => {
-    const { data } = await api.get(`/vouchers/${id}/image`, { params: { download: 1 }, responseType: "blob" });
+  const descargar = async (v: VoucherItem) => {
+    const { data } = await api.get(`/vouchers/${v.voucherId}/file`, { params: { download: 1 }, responseType: "blob" });
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${id}.jpg`;
+    a.download = v.nombreArchivo ?? `${v.voucherId}.${v.formato ?? "jpg"}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -169,15 +199,25 @@ export default function GaleriaPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {items.map((v) => (
           <div key={v.voucherId} className="card p-0 overflow-hidden cursor-pointer hover:shadow-md transition" onClick={() => setSeleccion(v)}>
-            <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover" />
+            {esPdf(v) ? (
+              <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600">
+                <div className="text-3xl font-bold">PDF</div>
+                <div className="text-xs mt-1 text-red-500">Factura electronica</div>
+              </div>
+            ) : (
+              <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover" />
+            )}
             <div className="p-3">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs font-semibold" style={{ color: COLOR_CATEGORIA[v.categoria] }}>
                   {v.voucherId}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
-                  {LABEL_CATEGORIA[v.categoria]}
-                </span>
+                <div className="flex gap-1">
+                  {esPdf(v) && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600">PDF</span>}
+                  <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
+                    {LABEL_CATEGORIA[v.categoria]}
+                  </span>
+                </div>
               </div>
               <div className="text-sm mt-1">{v.usuario.nombre}</div>
               {v.descripcion && (
@@ -218,7 +258,11 @@ export default function GaleriaPage() {
               <button onClick={() => setSeleccion(null)} className="text-2xl leading-none text-slate-400">×</button>
             </div>
             <div className="p-4">
-              <AuthImage voucherId={seleccion.voucherId} className="w-full object-contain max-h-[60vh]" />
+              {esPdf(seleccion) ? (
+                <PdfPreview voucherId={seleccion.voucherId} />
+              ) : (
+                <AuthImage voucherId={seleccion.voucherId} className="w-full object-contain max-h-[60vh]" />
+              )}
             </div>
             {(seleccion.fechaVoucher || seleccion.descripcion) && (
               <div className="px-4 pb-2 space-y-1 text-sm">
@@ -234,7 +278,9 @@ export default function GaleriaPage() {
               <span className="text-sm text-slate-500">Subido: {new Date(seleccion.fechaCarga).toLocaleString()}</span>
               <div className="flex gap-2 flex-wrap">
                 {(esAdmin || usuario?.puedeDescargar) && (
-                  <button className="btn-primary" onClick={() => descargar(seleccion.voucherId)}>Descargar original</button>
+                  <button className="btn-primary" onClick={() => descargar(seleccion)}>
+                    {esPdf(seleccion) ? "Descargar PDF" : "Descargar original"}
+                  </button>
                 )}
                 <button
                   className="btn bg-red-50 text-red-600 hover:bg-red-100 text-sm"

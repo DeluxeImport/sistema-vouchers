@@ -24,18 +24,18 @@ function categoriasVisibles(req: any): readonly Categoria[] {
   return u.esAdmin ? CATEGORIAS : u.categorias;
 }
 
-const MIMES_VALIDOS = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"];
+const MIMES_VALIDOS = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "application/pdf"];
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.maxFileSize, files: 5 },
   fileFilter: (_req, file, cb) => {
     if (MIMES_VALIDOS.includes(file.mimetype)) cb(null, true);
-    else cb(new Error("Formato no permitido. Use JPG, PNG, WEBP o HEIC."));
+    else cb(new Error("Formato no permitido. Use JPG, PNG, WEBP, HEIC o PDF."));
   },
 });
 
-// POST /api/vouchers/upload  (multipart, campo "imagenes", hasta 5)
+// POST /api/vouchers/upload  (multipart, campo "imagenes", hasta 5 archivos)
 router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res) => {
   if (!req.usuario!.puedeSubir) {
     return res.status(403).json({ error: "No tienes permiso para subir" });
@@ -48,9 +48,9 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
     return res.status(403).json({ error: "No tienes permiso para esta categoria" });
   }
   const archivos = (req.files as Express.Multer.File[]) ?? [];
-  if (archivos.length === 0) return res.status(400).json({ error: "Debe subir al menos una imagen" });
+  if (archivos.length === 0) return res.status(400).json({ error: "Debe subir al menos un archivo" });
 
-  // Metadata por foto (en el mismo orden que las imagenes): [{fecha, descripcion}, ...]
+  // Metadata por archivo (en el mismo orden): [{fecha, descripcion}, ...]
   let metadatos: { fecha?: string; descripcion?: string }[] = [];
   try {
     if (req.body.metadatos) metadatos = JSON.parse(String(req.body.metadatos));
@@ -66,14 +66,18 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
     const m = metadatos[i] ?? {};
     // Construimos la fecha a mediodia local para evitar que el huso horario la corra un dia.
     const fechaVoucher = m.fecha ? new Date(`${m.fecha}T12:00:00`) : null;
-    const r = await procesarYGuardar(
-      { buffer: a.buffer, mimetype: a.mimetype, size: a.size },
-      categoria,
-      usuarioId,
-      ip,
-      { fechaVoucher: isNaN(fechaVoucher?.getTime() ?? NaN) ? null : fechaVoucher, descripcion: m.descripcion }
-    );
-    resultados.push(r);
+    try {
+      const r = await procesarYGuardar(
+        { buffer: a.buffer, mimetype: a.mimetype, size: a.size },
+        categoria,
+        usuarioId,
+        ip,
+        { fechaVoucher: isNaN(fechaVoucher?.getTime() ?? NaN) ? null : fechaVoucher, descripcion: m.descripcion }
+      );
+      resultados.push(r);
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : "Archivo invalido" });
+    }
   }
   await audit(req, "UPLOAD", usuarioId, `${resultados.length} voucher(s) ${categoria}: ${resultados.map((r) => r.voucherId).join(", ")}`);
   return res.status(201).json({ vouchers: resultados });
@@ -294,18 +298,37 @@ router.get("/:id", requireAuth, async (req, res) => {
   return res.json(voucher);
 });
 
-// GET /api/vouchers/:id/image
-router.get("/:id/image", requireAuth, async (req, res) => {
+function contentTypeDesdeFormato(formato?: string | null): string | undefined {
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+  };
+  return formato ? map[formato.toLowerCase()] : undefined;
+}
+
+async function enviarArchivoVoucher(req: any, res: any) {
   const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
   if (!voucher) return res.status(404).json({ error: "Voucher no encontrado" });
   if (!puedeAcceder(req, voucher)) return res.status(404).json({ error: "Voucher no encontrado" });
   const ruta = rutaAbsolutaVoucher(voucher.rutaArchivo);
   if (!fs.existsSync(ruta)) return res.status(404).json({ error: "Archivo no encontrado" });
+  const contentType = contentTypeDesdeFormato(voucher.formato);
   if (req.query.download) {
     if (!req.usuario!.puedeDescargar) return res.status(403).json({ error: "No tienes permiso para descargar" });
     return res.download(ruta, voucher.nombreArchivo);
   }
+  if (contentType) res.type(contentType);
   return res.sendFile(ruta);
-});
+}
+
+// GET /api/vouchers/:id/image (compatibilidad con frontend existente)
+router.get("/:id/image", requireAuth, enviarArchivoVoucher);
+
+// GET /api/vouchers/:id/file
+router.get("/:id/file", requireAuth, enviarArchivoVoucher);
 
 export default router;

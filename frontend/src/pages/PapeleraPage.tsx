@@ -7,12 +7,17 @@ import { COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categor
 interface PapeleraItem {
   voucherId: string;
   categoria: Categoria;
+  formato?: string | null;
   fechaCarga: string;
   fechaVoucher?: string | null;
   descripcion?: string | null;
   eliminadoEn: string;
   diasRestantes: number;
   usuario: { id: string; nombre: string };
+}
+
+function esPdf(v: PapeleraItem): boolean {
+  return v.formato?.toLowerCase() === "pdf";
 }
 
 export default function PapeleraPage() {
@@ -70,7 +75,14 @@ export default function PapeleraPage() {
         {items.map((v) => (
           <div key={v.voucherId} className="card p-0 overflow-hidden flex flex-col">
             <div className="relative">
-              <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover opacity-80" />
+              {esPdf(v) ? (
+                <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600 opacity-80">
+                  <div className="text-3xl font-bold">PDF</div>
+                  <div className="text-xs mt-1 text-red-500">Factura electronica</div>
+                </div>
+              ) : (
+                <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover opacity-80" />
+              )}
               <span
                 className={`absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded text-white ${
                   v.diasRestantes <= 3 ? "bg-red-600" : "bg-slate-700/80"
@@ -84,9 +96,12 @@ export default function PapeleraPage() {
                 <span className="font-mono text-xs font-semibold" style={{ color: COLOR_CATEGORIA[v.categoria] }}>
                   {v.voucherId}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
-                  {LABEL_CATEGORIA[v.categoria]}
-                </span>
+                <div className="flex gap-1">
+                  {esPdf(v) && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600">PDF</span>}
+                  <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
+                    {LABEL_CATEGORIA[v.categoria]}
+                  </span>
+                </div>
               </div>
               <div className="text-sm mt-1">{v.usuario.nombre}</div>
               {v.descripcion && (
