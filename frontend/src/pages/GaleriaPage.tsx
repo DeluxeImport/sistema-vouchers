@@ -50,6 +50,17 @@ function fmtFecha(f?: string | null): string {
   const d = new Date(f);
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
+
+// Fecha YYYY-MM-DD o ISO -> YYYY-MM-DD para el input type="date".
+function fechaInputValue(f?: string | null): string {
+  if (!f) return "";
+  const d = new Date(f);
+  if (isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 interface Usuario { id: string; nombre: string }
 
 const FILTROS_INICIALES = {
@@ -78,6 +89,11 @@ export default function GaleriaPage() {
   const [conteos, setConteos] = useState<Record<string, number>>({});
   const [seleccion, setSeleccion] = useState<VoucherItem | null>(null);
   const [recarga, setRecarga] = useState(0);
+  const [editando, setEditando] = useState(false);
+  const [fechaEdit, setFechaEdit] = useState("");
+  const [descripcionEdit, setDescripcionEdit] = useState("");
+  const [guardandoEdit, setGuardandoEdit] = useState(false);
+  const [errorEdit, setErrorEdit] = useState("");
 
   useEffect(() => {
     api.get("/users").then(({ data }) => setUsuarios(data.usuarios));
@@ -107,6 +123,44 @@ export default function GaleriaPage() {
       setRecarga((r) => r + 1);
     } catch (e) {
       alert(mensajeError(e));
+    }
+  };
+
+  const abrirModal = (v: VoucherItem) => {
+    setSeleccion(v);
+    setEditando(false);
+    setErrorEdit("");
+  };
+  const cerrarModal = () => {
+    setSeleccion(null);
+    setEditando(false);
+    setErrorEdit("");
+  };
+
+  const empezarEdicion = () => {
+    if (!seleccion) return;
+    setFechaEdit(fechaInputValue(seleccion.fechaVoucher));
+    setDescripcionEdit(seleccion.descripcion ?? "");
+    setErrorEdit("");
+    setEditando(true);
+  };
+
+  const guardarEdicion = async () => {
+    if (!seleccion) return;
+    setGuardandoEdit(true);
+    setErrorEdit("");
+    try {
+      const { data } = await api.patch(`/vouchers/${seleccion.voucherId}`, {
+        fecha: fechaEdit,
+        descripcion: descripcionEdit,
+      });
+      setSeleccion((s) => (s ? { ...s, fechaVoucher: data.fechaVoucher, descripcion: data.descripcion } : s));
+      setEditando(false);
+      setRecarga((r) => r + 1);
+    } catch (e) {
+      setErrorEdit(mensajeError(e));
+    } finally {
+      setGuardandoEdit(false);
     }
   };
 
@@ -198,11 +252,11 @@ export default function GaleriaPage() {
       {/* Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {items.map((v) => (
-          <div key={v.voucherId} className="card p-0 overflow-hidden cursor-pointer hover:shadow-md transition" onClick={() => setSeleccion(v)}>
+          <div key={v.voucherId} className="card p-0 overflow-hidden cursor-pointer hover:shadow-md transition" onClick={() => abrirModal(v)}>
             {esPdf(v) ? (
               <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600">
                 <div className="text-3xl font-bold">PDF</div>
-                <div className="text-xs mt-1 text-red-500">Factura electronica</div>
+                <div className="text-xs mt-1 text-red-500">{LABEL_CATEGORIA[v.categoria]} electronica</div>
               </div>
             ) : (
               <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover" />
@@ -246,7 +300,7 @@ export default function GaleriaPage() {
 
       {/* Modal vista expandida */}
       {seleccion && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setSeleccion(null)}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={cerrarModal}>
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <div>
@@ -255,7 +309,7 @@ export default function GaleriaPage() {
                 </span>
                 <span className="text-sm text-slate-500 ml-3">{seleccion.usuario.nombre}</span>
               </div>
-              <button onClick={() => setSeleccion(null)} className="text-2xl leading-none text-slate-400">×</button>
+              <button onClick={cerrarModal} className="text-2xl leading-none text-slate-400">×</button>
             </div>
             <div className="p-4">
               {esPdf(seleccion) ? (
@@ -264,15 +318,46 @@ export default function GaleriaPage() {
                 <AuthImage voucherId={seleccion.voucherId} className="w-full object-contain max-h-[60vh]" />
               )}
             </div>
-            {(seleccion.fechaVoucher || seleccion.descripcion) && (
-              <div className="px-4 pb-2 space-y-1 text-sm">
-                {seleccion.fechaVoucher && (
-                  <div><span className="text-slate-400">Fecha del voucher:</span> {fmtFecha(seleccion.fechaVoucher)}</div>
-                )}
-                {seleccion.descripcion && (
-                  <div><span className="text-slate-400">Nota:</span> {seleccion.descripcion}</div>
-                )}
+            {editando ? (
+              <div className="px-4 pb-2 space-y-3 text-sm">
+                <div>
+                  <label className="label text-xs">Fecha del voucher</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={fechaEdit}
+                    onChange={(e) => setFechaEdit(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Nota / descripción</label>
+                  <input
+                    className="input"
+                    value={descripcionEdit}
+                    onChange={(e) => setDescripcionEdit(e.target.value)}
+                  />
+                </div>
+                {errorEdit && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-xs">{errorEdit}</div>}
+                <div className="flex gap-2">
+                  <button className="btn-primary text-sm" onClick={guardarEdicion} disabled={guardandoEdit}>
+                    {guardandoEdit ? "Guardando..." : "Guardar cambios"}
+                  </button>
+                  <button className="btn-ghost text-sm" onClick={() => setEditando(false)} disabled={guardandoEdit}>
+                    Cancelar
+                  </button>
+                </div>
               </div>
+            ) : (
+              (seleccion.fechaVoucher || seleccion.descripcion) && (
+                <div className="px-4 pb-2 space-y-1 text-sm">
+                  {seleccion.fechaVoucher && (
+                    <div><span className="text-slate-400">Fecha del voucher:</span> {fmtFecha(seleccion.fechaVoucher)}</div>
+                  )}
+                  {seleccion.descripcion && (
+                    <div><span className="text-slate-400">Nota:</span> {seleccion.descripcion}</div>
+                  )}
+                </div>
+              )
             )}
             <div className="p-4 border-t flex flex-wrap justify-between items-center gap-2">
               <span className="text-sm text-slate-500">Subido: {new Date(seleccion.fechaCarga).toLocaleString()}</span>
@@ -280,6 +365,11 @@ export default function GaleriaPage() {
                 {(esAdmin || usuario?.puedeDescargar) && (
                   <button className="btn-primary" onClick={() => descargar(seleccion)}>
                     {esPdf(seleccion) ? "Descargar PDF" : "Descargar original"}
+                  </button>
+                )}
+                {esAdmin && !editando && (
+                  <button className="btn-ghost text-sm" onClick={empezarEdicion}>
+                    Editar fecha / nota
                   </button>
                 )}
                 <button

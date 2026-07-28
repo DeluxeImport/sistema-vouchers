@@ -78,7 +78,7 @@ export default function PapeleraPage() {
               {esPdf(v) ? (
                 <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600 opacity-80">
                   <div className="text-3xl font-bold">PDF</div>
-                  <div className="text-xs mt-1 text-red-500">Factura electronica</div>
+                  <div className="text-xs mt-1 text-red-500">{LABEL_CATEGORIA[v.categoria]} electronica</div>
                 </div>
               ) : (
                 <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover opacity-80" />

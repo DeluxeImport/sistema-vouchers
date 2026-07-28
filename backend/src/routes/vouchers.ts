@@ -251,6 +251,44 @@ router.get("/papelera", requireAuth, async (req, res) => {
   return res.json({ items: conDias, diasPapelera: DIAS_PAPELERA });
 });
 
+// PATCH /api/vouchers/:id  -> editar la fecha del voucher y/o la nota (sin re-subir el archivo)
+// Por ahora solo el admin puede editar (los usuarios normales solo ven/suben/borran).
+const editSchema = z.object({
+  fecha: z.string().optional(),
+  descripcion: z.string().optional(),
+});
+router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
+  const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
+  if (!voucher) return res.status(404).json({ error: "Voucher no encontrado" });
+  if (voucher.eliminadoEn) return res.status(400).json({ error: "No se puede editar un voucher en la papelera" });
+
+  const parse = editSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Datos invalidos" });
+  const { fecha, descripcion } = parse.data;
+  if (fecha === undefined && descripcion === undefined) {
+    return res.status(400).json({ error: "Nada que actualizar" });
+  }
+
+  const data: { fechaVoucher?: Date | null; descripcion?: string | null } = {};
+  if (fecha !== undefined) {
+    if (fecha === "") {
+      data.fechaVoucher = null;
+    } else {
+      // Igual que en la carga: mediodia local para que el huso no corra la fecha un dia.
+      const fechaVoucher = new Date(`${fecha}T12:00:00`);
+      if (isNaN(fechaVoucher.getTime())) return res.status(400).json({ error: "Fecha invalida" });
+      data.fechaVoucher = fechaVoucher;
+    }
+  }
+  if (descripcion !== undefined) {
+    data.descripcion = descripcion.trim() || null;
+  }
+
+  const actualizado = await prisma.voucher.update({ where: { voucherId: voucher.voucherId }, data });
+  await audit(req, "VOUCHER_EDIT", req.usuario!.sub, `${voucher.voucherId}: ${JSON.stringify(data)}`);
+  return res.json(actualizado);
+});
+
 // DELETE /api/vouchers/:id  -> mover a la papelera (soft delete)
 router.delete("/:id", requireAuth, async (req, res) => {
   const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });

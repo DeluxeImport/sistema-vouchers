@@ -10,6 +10,9 @@ import {
   type Categoria,
 } from "../lib/categorias";
 
+// Categorias de documento que ademas admiten carga directa de PDF (sin foto).
+const CATEGORIAS_PDF = ["FACTURA", "BOLETA"] as const;
+
 interface TarjetaProps {
   titulo: string;
   categorias: readonly Categoria[];
@@ -203,11 +206,19 @@ function TarjetaSubida({ titulo, categorias, sustantivo }: TarjetaProps) {
   );
 }
 
-function TarjetaFacturasPdf() {
+interface TarjetaDocumentoPdfProps {
+  categoria: (typeof CATEGORIAS_PDF)[number];
+}
+
+function TarjetaDocumentoPdf({ categoria }: TarjetaDocumentoPdfProps) {
   const [items, setItems] = useState<ItemSubida[]>([]);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
   const [resultado, setResultado] = useState<{ voucherId: string }[] | null>(null);
+
+  const etiqueta = LABEL_CATEGORIA[categoria]; // "Factura" | "Boleta"
+  const etiquetaMin = etiqueta.toLowerCase();
+  const color = COLOR_CATEGORIA[categoria];
 
   const onDrop = useCallback((aceptados: File[]) => {
     setItems((prev) =>
@@ -235,12 +246,12 @@ function TarjetaFacturasPdf() {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [campo]: valor } : it)));
 
   const subir = async () => {
-    if (items.length === 0) return setError("Agrega al menos un PDF");
+    if (items.length === 0) return setError(`Agrega al menos un PDF de ${etiquetaMin}`);
     setError("");
     setCargando(true);
     try {
       const fd = new FormData();
-      fd.append("categoria", "FACTURA");
+      fd.append("categoria", categoria);
       items.forEach((it) => fd.append("imagenes", it.file));
       fd.append("metadatos", JSON.stringify(items.map((it) => ({ fecha: it.fecha, descripcion: it.descripcion }))));
       const { data } = await api.post("/vouchers/upload", fd);
@@ -256,9 +267,9 @@ function TarjetaFacturasPdf() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-primario">Facturas electronicas (PDF)</h2>
+        <h2 className="text-xl font-bold text-primario">{etiqueta}s electronicas (PDF)</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Sube aqui archivos PDF de facturas electronicas sin tomar capturas.
+          Sube aqui archivos PDF de {etiquetaMin}s electronicas sin tomar capturas.
         </p>
       </div>
 
@@ -282,8 +293,11 @@ function TarjetaFacturasPdf() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <label className="label">Categoria</label>
-            <span className="inline-flex items-center rounded-lg border-2 px-4 py-2 text-sm font-medium text-white bg-[#DB2777] border-[#DB2777]">
-              Factura
+            <span
+              className="inline-flex items-center rounded-lg border-2 px-4 py-2 text-sm font-medium text-white"
+              style={{ background: color, borderColor: color }}
+            >
+              {etiqueta}
             </span>
           </div>
           <span className="text-xs text-slate-400">PDF - max 10 MB c/u - hasta 5 archivos</span>
@@ -302,15 +316,15 @@ function TarjetaFacturasPdf() {
               PDF
             </div>
             <p className="text-slate-500">
-              {isDragActive ? "Suelta los PDF aqui..." : "Arrastra facturas PDF o haz clic para seleccionar"}
+              {isDragActive ? "Suelta los PDF aqui..." : `Arrastra ${etiquetaMin}s PDF o haz clic para seleccionar`}
             </p>
-            <p className="text-xs text-slate-400 mt-1">Solo PDF de facturas electronicas</p>
+            <p className="text-xs text-slate-400 mt-1">Solo PDF de {etiquetaMin}s electronicas</p>
           </div>
         </div>
 
         {items.length > 0 && (
           <div className="space-y-3">
-            <label className="label">Datos de cada factura</label>
+            <label className="label">Datos de cada {etiquetaMin}</label>
             {items.map((it, i) => (
               <div key={`${it.file.name}-${i}`} className="grid gap-3 border border-slate-200 rounded-lg p-3 sm:grid-cols-[1fr_160px_32px]">
                 <div>
@@ -324,7 +338,7 @@ function TarjetaFacturasPdf() {
                   />
                 </div>
                 <div>
-                  <label className="label text-xs">Fecha de factura</label>
+                  <label className="label text-xs">Fecha de {etiquetaMin}</label>
                   <input
                     type="date"
                     className="input"
@@ -357,7 +371,7 @@ export default function SubirVoucherPage() {
   const permitidas = new Set(usuario?.categorias ?? []);
   const vouchers = CATEGORIAS_VOUCHER.filter((c) => permitidas.has(c)) as Categoria[];
   const documentos = CATEGORIAS_DOCUMENTO.filter((c) => permitidas.has(c)) as Categoria[];
-  const puedeSubirFacturasPdf = permitidas.has("FACTURA");
+  const categoriasPdf = CATEGORIAS_PDF.filter((c) => permitidas.has(c));
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -367,7 +381,9 @@ export default function SubirVoucherPage() {
       {documentos.length > 0 && (
         <TarjetaSubida titulo="Subir Documento" categorias={documentos} sustantivo="documento" />
       )}
-      {puedeSubirFacturasPdf && <TarjetaFacturasPdf />}
+      {categoriasPdf.map((c) => (
+        <TarjetaDocumentoPdf key={c} categoria={c} />
+      ))}
       {vouchers.length === 0 && documentos.length === 0 && (
         <div className="card text-slate-500">No tienes categorías habilitadas para subir. Contacta al administrador.</div>
       )}
