@@ -15,6 +15,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", handlers.comando_start))
     app.add_handler(MessageHandler(filters.PHOTO, handlers.foto_recibida))
     app.add_handler(CallbackQueryHandler(handlers.boton_pulsado))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.texto_recibido))
 
     logging.info("Bot arrancando (polling)...")
     app.run_polling()

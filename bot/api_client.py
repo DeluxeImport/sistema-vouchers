@@ -54,10 +54,13 @@ async def subir_voucher(
     imagen: bytes,
     nombre_archivo: str,
     descripcion: Optional[str] = None,
+    fecha: Optional[str] = None,
 ) -> dict:
     datos = {"telegramUserId": telegram_user_id, "categoria": categoria, "chatId": chat_id}
     if descripcion:
         datos["descripcion"] = descripcion
+    if fecha:
+        datos["fecha"] = fecha
     archivos = {"imagen": (nombre_archivo, imagen, "image/jpeg")}
     async with httpx.AsyncClient(base_url=config.API_BASE_URL, timeout=30) as client:
         r = await client.post("/bot/vouchers", data=datos, files=archivos, headers=_headers())

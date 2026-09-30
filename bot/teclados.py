@@ -23,6 +23,28 @@ def teclado_categorias(sesion_id: str, permitidas: list[str]) -> InlineKeyboardM
     return InlineKeyboardMarkup(filas)
 
 
+def teclado_fecha_detectada(sesion_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✓ Confirmar", callback_data=f"fecha_ok:{sesion_id}:"),
+                InlineKeyboardButton("✎ Corregir", callback_data=f"fecha_corregir:{sesion_id}:"),
+            ]
+        ]
+    )
+
+
+def teclado_si_no(sesion_id: str, prefijo: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Sí", callback_data=f"{prefijo}_si:{sesion_id}:"),
+                InlineKeyboardButton("No", callback_data=f"{prefijo}_no:{sesion_id}:"),
+            ]
+        ]
+    )
+
+
 def teclado_subcategorias(sesion_id: str, grupo_id: str, permitidas: list[str]) -> InlineKeyboardMarkup:
     permitidas_set = set(permitidas)
     grupo = next(g for g in GRUPOS if g.id == grupo_id)

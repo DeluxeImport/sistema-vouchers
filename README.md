@@ -8,7 +8,7 @@ No decide permisos: siempre resuelve el usuario real a partir del
 `telegram_user_id` vinculado y reutiliza exactamente las mismas categorías
 permitidas que la web (`categoriasDe()` del backend).
 
-## Qué hace (Fase 1, sin OCR)
+## Qué hace
 
 1. `/start TOKEN` — vincula la cuenta de Telegram con el token de un solo uso
    que se genera desde **Sistema Vouchers → Perfil → "Vincular Telegram"**.
@@ -16,16 +16,30 @@ permitidas que la web (`categoriasDe()` del backend).
    categorías habilitadas, el bot pregunta con botones (agrupados igual que
    la web: Compras/Servicios/Servicios Fijos abren su subcategoría; el resto
    se elige directo).
-3. Al elegir la categoría, sube la foto a Sistema Vouchers y confirma con el
-   `voucherId` generado.
-4. Si la cuenta no está vinculada, ignora la foto en el grupo y avisa por
+3. Al elegir la categoría, el bot intenta detectar la **fecha** del
+   comprobante: primero lee el código QR (facturas/boletas electrónicas,
+   formato SUNAT — trae la fecha exacta), y si no hay QR o no calza, cae a
+   OCR sobre el texto de la foto. Si detecta una fecha, la muestra para
+   Confirmar o Corregir; si no detecta nada, la pide escrita (o "omitir").
+4. Pregunta si quiere dejar una **nota** (Sí/No; si Sí, espera el texto).
+5. Sube la foto a Sistema Vouchers (con la fecha y la nota, si las hay) y
+   confirma con el `voucherId` generado.
+6. Si la cuenta no está vinculada, ignora la foto en el grupo y avisa por
    privado (si el bot puede escribirle).
-5. Solo quien mandó la foto (o un administrador) puede tocar los botones de
+7. Solo quien mandó la foto (o un administrador) puede tocar los botones de
    esa subida.
 
-Lo que **no** hace todavía (fases siguientes, no implementadas): lectura de
-QR/OCR, YOLO, detección de duplicados, conciliación bancaria, exportación a
-Contabilidad.
+**Sobre el motor de OCR:** el documento original pedía PaddleOCR, pero esa
+librería no publica versión para Python 3.14 (la única disponible en esta
+máquina) — no se pudo instalar. Se usó **EasyOCR** en su lugar (mismo
+propósito, con soporte de español, instalable solo con pip). El único lugar
+que sabe cuál motor se usa es `bot/extraccion.py`; si más adelante se corre
+el bot con un Python más viejo, se puede volver a PaddleOCR sin tocar el
+resto del flujo.
+
+Lo que **no** hace todavía (fases siguientes, no implementadas): extracción
+de RUC/monto/serie-número, YOLO, detección de duplicados, conciliación
+bancaria, exportación a Contabilidad.
 
 ## Configuración
 
