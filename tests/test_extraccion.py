@@ -72,6 +72,36 @@ def test_fecha_de_texto_mes_irreconocible_no_inventa_nada():
     assert fecha_de_texto("30 de xyzxyz de 2026") is None
 
 
+def test_fecha_de_texto_mes_escrito_en_numero():
+    # Caso real: un recibo de caja a mano con "Trujillo, 25 de 09 de 2026."
+    # (la plantilla dice "de ___ de ___" y la persona puso el mes en numero).
+    assert fecha_de_texto("Trujillo, 25 de 09 de 2026.") == "2026-09-25"
+
+
+def test_fecha_de_texto_mes_numerico_invalido_no_inventa_nada():
+    assert fecha_de_texto("25 de 13 de 2026") is None
+
+
+def test_fecha_de_texto_dos_fechas_numericas_distintas_es_ambiguo():
+    # Un documento con dos fechas distintas completas (ej. "Emitido" y
+    # "Vence") -- no hay forma segura de saber cual es la que corresponde,
+    # mejor no adivinar y dejar que la persona confirme.
+    texto = "Emitido: 15/03/2026  Vence: 20/04/2026"
+    assert fecha_de_texto(texto) is None
+
+
+def test_fecha_de_texto_misma_fecha_repetida_no_es_ambigua():
+    texto = "Fecha 15/03/2026 - confirmado 15/03/2026"
+    assert fecha_de_texto(texto) == "2026-03-15"
+
+
+def test_fecha_de_texto_anio_con_espacio_de_formulario_preimpreso():
+    # Caso real: el formulario trae "20__" preimpreso y la persona completa
+    # a mano el resto, dejando un hueco que el OCR respeta ("202 6", no
+    # necesariamente separado en la mitad).
+    assert fecha_de_texto("Trujillo, 25 de septiembre de 202 6.") == "2026-09-25"
+
+
 # --- detectar_fecha (punta a punta con un QR real, sin necesitar OCR) --
 
 

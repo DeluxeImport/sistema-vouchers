@@ -63,12 +63,20 @@ _MESES = {
 
 # Separador tolerante: el OCR a veces confunde "/" con "," "'" "." etc.
 _SEP = r"\s*[/\-.,'´ʼ]\s*"
-_PATRON_NUMERICO = re.compile(r"\b(\d{1,2})" + _SEP + r"(\d{1,2})" + _SEP + r"(\d{2,4})\b")
-# El nombre del mes se busca por separado y de forma tolerante (ver
-# _mes_mas_parecido) porque el OCR suele leer mal una letra suelta en
-# palabras largas ("septiembre" -> "sptlembre"); exigir coincidencia exacta
-# descartaba fechas que en realidad se leyeron casi perfecto.
-_PATRON_TEXTO = re.compile(r"\b(\d{1,2})\s+de\s+([a-zA-Zá-úÁ-Ú]+)\s+de\s+(\d{4})\b", re.IGNORECASE)
+# Año de 4 digitos, tolerando un espacio suelto entre cualquier par: muchos
+# formularios impresos ya traen "20__" y la persona completa a mano el
+# resto, dejando un hueco donde el OCR a veces mete un espacio -- y no
+# siempre justo en la mitad ("202 6", no solo "20 26").
+_ANIO = r"\d\s?\d\s?\d\s?\d"
+_PATRON_NUMERICO = re.compile(r"\b(\d{1,2})" + _SEP + r"(\d{1,2})" + _SEP + r"(" + _ANIO + r"|\d{2})\b")
+# El "mes" de este patron admite tanto palabra ("de Septiembre de") como
+# numero ("de 09 de") -- en formularios a mano es comun que alguien escriba
+# el mes en numero dentro de la misma plantilla "___ de ___ de ___".
+# El nombre del mes se busca de forma tolerante (ver _mes_mas_parecido)
+# porque el OCR suele leer mal una letra suelta en palabras largas
+# ("septiembre" -> "sptlembre"); exigir coincidencia exacta descartaba
+# fechas que en realidad se leyeron casi perfecto.
+_PATRON_TEXTO = re.compile(r"\b(\d{1,2})\s+de\s+([a-zA-Zá-úÁ-Ú0-9]+)\s+de\s+(" + _ANIO + r")\b", re.IGNORECASE)
 
 
 def _distancia_edicion(a: str, b: str) -> int:
@@ -100,29 +108,50 @@ def _mes_mas_parecido(palabra: str) -> Optional[int]:
     return mejor_mes
 
 
-def fecha_de_texto(texto: str) -> Optional[str]:
-    """Busca una fecha en espanol dentro de un texto libre (salida de OCR).
-    Devuelve YYYY-MM-DD, o None si no encuentra nada que parezca fecha valida."""
-    m = _PATRON_NUMERICO.search(texto)
-    if m:
+def _candidatos_numericos(texto: str) -> list[str]:
+    candidatos = []
+    for m in _PATRON_NUMERICO.finditer(texto):
         dia, mes, anio = m.groups()
+        anio = anio.replace(" ", "")
         if len(anio) == 2:
             anio = "20" + anio
         try:
-            return datetime(int(anio), int(mes), int(dia)).strftime("%Y-%m-%d")
+            candidatos.append(datetime(int(anio), int(mes), int(dia)).strftime("%Y-%m-%d"))
         except ValueError:
-            pass  # sigue con el patron de texto, puede que calce ahi
+            continue
+    return candidatos
 
-    m = _PATRON_TEXTO.search(texto)
-    if m:
+
+def _candidatos_texto(texto: str) -> list[str]:
+    candidatos = []
+    for m in _PATRON_TEXTO.finditer(texto):
         dia, mes_texto, anio = m.groups()
-        mes = _mes_mas_parecido(mes_texto)
-        if mes is not None:
-            try:
-                return datetime(int(anio), mes, int(dia)).strftime("%Y-%m-%d")
-            except ValueError:
-                pass
+        anio = anio.replace(" ", "")
+        if mes_texto.isdigit():
+            mes = int(mes_texto)
+            if not (1 <= mes <= 12):
+                continue
+        else:
+            mes = _mes_mas_parecido(mes_texto)
+            if mes is None:
+                continue
+        try:
+            candidatos.append(datetime(int(anio), mes, int(dia)).strftime("%Y-%m-%d"))
+        except ValueError:
+            continue
+    return candidatos
 
+
+def fecha_de_texto(texto: str) -> Optional[str]:
+    """Busca una fecha en espanol dentro de un texto libre (salida de OCR).
+    Devuelve YYYY-MM-DD, o None si no encuentra ninguna fecha, o si encuentra
+    mas de una fecha DISTINTA (ej. un recibo con una fecha tachada y
+    corregida al lado, donde el OCR lee ambas) -- en ese caso es mas seguro
+    dejar que la persona confirme a mano que adivinar cual es la correcta."""
+    candidatos = _candidatos_numericos(texto) or _candidatos_texto(texto)
+    unicos = set(candidatos)
+    if len(unicos) == 1:
+        return unicos.pop()
     return None
 
 
