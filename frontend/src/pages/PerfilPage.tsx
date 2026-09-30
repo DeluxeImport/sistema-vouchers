@@ -17,6 +17,11 @@ export default function PerfilPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+  // Vinculacion con el bot de Telegram
+  const [vinculando, setVinculando] = useState(false);
+  const [linkTelegram, setLinkTelegram] = useState<{ deepLink: string | null; token: string; expiraEn: string } | null>(null);
+  const [errTelegram, setErrTelegram] = useState("");
+
   const cargar = () => {
     if (!usuario) return;
     api.get(`/users/${usuario.id}`).then(({ data }) => setPerfil(data));
@@ -42,6 +47,32 @@ export default function PerfilPage() {
     await api.delete(`/users/${usuario.id}/sessions`);
     await logout();
     location.href = "/login";
+  };
+
+  const vincularTelegram = async () => {
+    setErrTelegram("");
+    setVinculando(true);
+    try {
+      const { data } = await api.post("/users/me/telegram/token");
+      setLinkTelegram(data);
+      if (data.deepLink) window.open(data.deepLink, "_blank");
+    } catch (e) {
+      setErrTelegram(mensajeError(e));
+    } finally {
+      setVinculando(false);
+    }
+  };
+
+  const desvincularTelegram = async () => {
+    if (!confirm("¿Desvincular tu cuenta de Telegram? El bot dejara de reconocerte hasta que vuelvas a vincularla.")) return;
+    setErrTelegram("");
+    try {
+      await api.delete("/users/me/telegram");
+      setLinkTelegram(null);
+      cargar();
+    } catch (e) {
+      setErrTelegram(mensajeError(e));
+    }
   };
 
   return (
@@ -73,6 +104,45 @@ export default function PerfilPage() {
           <div className="label">2FA</div>
           <div className="font-medium">{totpActivo ? "Activo ✓" : "Inactivo"}</div>
         </div>
+      </div>
+
+      {/* Vinculacion con el bot de Telegram */}
+      <div className="card">
+        <h2 className="font-semibold mb-3">Bot de Telegram</h2>
+        {errTelegram && <div className="mb-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">{errTelegram}</div>}
+        {perfil?.telegramVinculado ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-green-700 font-medium">Vinculado ✓ — puedes mandar comprobantes por Telegram.</span>
+            <button className="btn-ghost text-sm" onClick={desvincularTelegram}>Desvincular</button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-500">
+              Vincula tu cuenta para mandar fotos de comprobantes directo por Telegram en vez de subirlas aquí.
+            </p>
+            <button className="btn-primary text-sm" onClick={vincularTelegram} disabled={vinculando}>
+              {vinculando ? "Generando enlace..." : "Vincular Telegram"}
+            </button>
+            {linkTelegram && (
+              <div className="rounded-lg bg-blue-50 text-blue-800 px-3 py-2 text-sm space-y-1">
+                {linkTelegram.deepLink ? (
+                  <p>
+                    Se abrió una pestaña nueva con el bot. Si no se abrió,{" "}
+                    <a className="underline font-medium" href={linkTelegram.deepLink} target="_blank" rel="noreferrer">
+                      haz clic aquí
+                    </a>
+                    .
+                  </p>
+                ) : (
+                  <p>Abre el bot en Telegram y envía: <code className="font-mono">/start {linkTelegram.token}</code></p>
+                )}
+                <p className="text-xs text-blue-600">
+                  Vence a las {new Date(linkTelegram.expiraEn).toLocaleTimeString()} — si se vence, genera un enlace nuevo.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cambiar contrasena */}

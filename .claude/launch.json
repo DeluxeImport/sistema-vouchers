@@ -2,9 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\Sistemas\\Documents\\Mis Proyectos\\sistema-vouchers\\backend", "run", "dev"],
+      "port": 3000
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "C:\\Users\\USER\\Desktop\\SistemaVouchers\\frontend", "run", "dev"],
+      "runtimeArgs": ["--prefix", "C:\\Users\\Sistemas\\Documents\\Mis Proyectos\\sistema-vouchers\\frontend", "run", "dev"],
       "port": 5173
     }
   ]

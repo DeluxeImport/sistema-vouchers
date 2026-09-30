@@ -1,9 +1,11 @@
 import { Router } from "express";
 import multer from "multer";
 import fs from "node:fs";
+import fsPromesas from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { config, CATEGORIAS, type Categoria } from "../config.js";
+import { config, CATEGORIAS, CATEGORIAS_SUBIBLES, CARPETAS, type Categoria } from "../config.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { procesarYGuardar, rutaAbsolutaVoucher, borrarArchivoVoucher, DIAS_PAPELERA } from "../services/voucherService.js";
 import { audit, getIp } from "../utils/audit.js";
@@ -41,7 +43,7 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
     return res.status(403).json({ error: "No tienes permiso para subir" });
   }
   const categoria = String(req.body.categoria ?? "").toUpperCase() as Categoria;
-  if (!CATEGORIAS.includes(categoria)) {
+  if (!CATEGORIAS_SUBIBLES.includes(categoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
     return res.status(400).json({ error: "Categoria invalida" });
   }
   if (!req.usuario!.esAdmin && !req.usuario!.categorias.includes(categoria)) {
@@ -251,11 +253,14 @@ router.get("/papelera", requireAuth, async (req, res) => {
   return res.json({ items: conDias, diasPapelera: DIAS_PAPELERA });
 });
 
-// PATCH /api/vouchers/:id  -> editar la fecha del voucher y/o la nota (sin re-subir el archivo)
+// PATCH /api/vouchers/:id  -> editar fecha/nota y/o mover de categoria (sin re-subir el archivo)
 // Por ahora solo el admin puede editar (los usuarios normales solo ven/suben/borran).
+// Al mover de categoria el voucher_id NO cambia (para no invalidar lo ya anotado/impreso):
+// solo se actualiza el campo categoria y se traslada el archivo a la carpeta correspondiente.
 const editSchema = z.object({
   fecha: z.string().optional(),
   descripcion: z.string().optional(),
+  categoria: z.string().optional(),
 });
 router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
   const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
@@ -264,12 +269,12 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
 
   const parse = editSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Datos invalidos" });
-  const { fecha, descripcion } = parse.data;
-  if (fecha === undefined && descripcion === undefined) {
+  const { fecha, descripcion, categoria } = parse.data;
+  if (fecha === undefined && descripcion === undefined && categoria === undefined) {
     return res.status(400).json({ error: "Nada que actualizar" });
   }
 
-  const data: { fechaVoucher?: Date | null; descripcion?: string | null } = {};
+  const data: { fechaVoucher?: Date | null; descripcion?: string | null; categoria?: Categoria; rutaArchivo?: string } = {};
   if (fecha !== undefined) {
     if (fecha === "") {
       data.fechaVoucher = null;
@@ -282,6 +287,25 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
   }
   if (descripcion !== undefined) {
     data.descripcion = descripcion.trim() || null;
+  }
+  if (categoria !== undefined) {
+    const nuevaCategoria = categoria.toUpperCase() as Categoria;
+    if (!CATEGORIAS_SUBIBLES.includes(nuevaCategoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
+      return res.status(400).json({ error: "Categoria invalida" });
+    }
+    if (nuevaCategoria !== voucher.categoria) {
+      const nuevaRutaRelativa = path.join(CARPETAS[nuevaCategoria], voucher.nombreArchivo).replace(/\\/g, "/");
+      const origenAbs = rutaAbsolutaVoucher(voucher.rutaArchivo);
+      const destinoAbs = rutaAbsolutaVoucher(nuevaRutaRelativa);
+      await fsPromesas.mkdir(path.dirname(destinoAbs), { recursive: true });
+      try {
+        await fsPromesas.rename(origenAbs, destinoAbs);
+      } catch {
+        /* el archivo original ya no existe: igual movemos el registro */
+      }
+      data.categoria = nuevaCategoria;
+      data.rutaArchivo = nuevaRutaRelativa;
+    }
   }
 
   const actualizado = await prisma.voucher.update({ where: { voucherId: voucher.voucherId }, data });

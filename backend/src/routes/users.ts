@@ -5,6 +5,8 @@ import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { hashPassword } from "../services/authService.js";
 import { categoriasACsv, ROL_ADMIN } from "../utils/permisos.js";
 import { audit } from "../utils/audit.js";
+import { config } from "../config.js";
+import { generarTokenVinculacion } from "../services/vinculacionService.js";
 
 const router = Router();
 
@@ -189,12 +191,28 @@ router.get("/:id", requireAuth, async (req, res) => {
     where: { id: req.params.id },
     select: {
       id: true, nombre: true, username: true, rol: true,
-      creadoEn: true, ultimoAcceso: true, totpActivo: true,
+      creadoEn: true, ultimoAcceso: true, totpActivo: true, telegramUserId: true,
     },
   });
   if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
   const totalVouchers = await prisma.voucher.count({ where: { usuarioId: usuario.id } });
-  return res.json({ ...usuario, totalVouchers });
+  const { telegramUserId, ...resto } = usuario;
+  return res.json({ ...resto, totalVouchers, telegramVinculado: telegramUserId !== null });
+});
+
+// POST /api/users/me/telegram/token  -> genera el token de un solo uso para
+// el boton "Vincular Telegram" del perfil (vence a los 10 minutos).
+router.post("/me/telegram/token", requireAuth, async (req, res) => {
+  const { token, expiraEn } = await generarTokenVinculacion(req.usuario!.sub);
+  const deepLink = config.telegramBotUsername ? `https://t.me/${config.telegramBotUsername}?start=${token}` : null;
+  return res.json({ token, expiraEn, deepLink });
+});
+
+// DELETE /api/users/me/telegram  -> desvincular la cuenta de Telegram propia.
+router.delete("/me/telegram", requireAuth, async (req, res) => {
+  await prisma.usuario.update({ where: { id: req.usuario!.sub }, data: { telegramUserId: null } });
+  await audit(req, "TELEGRAM_DESVINCULADO", req.usuario!.sub);
+  return res.json({ ok: true });
 });
 
 // GET /api/users/:id/sessions  (ultimos 10 accesos)

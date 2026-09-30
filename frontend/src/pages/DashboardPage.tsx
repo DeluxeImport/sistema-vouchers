@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, Legend } from "recharts";
 import { api } from "../api/client";
 import { useAuth } from "../store/auth";
-import { CATEGORIAS, COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
+import {
+  CATEGORIAS,
+  GRUPOS_VOUCHER,
+  CATEGORIAS_SUELTAS,
+  CATEGORIAS_DOCUMENTO,
+  COLOR_CATEGORIA,
+  LABEL_CATEGORIA,
+  type Categoria,
+} from "../lib/categorias";
 
 interface Stats {
   total: number;
@@ -33,7 +41,27 @@ export default function DashboardPage() {
     if (esAdmin) api.get("/vouchers/stats/by-user").then(({ data }) => setUsuarios(data.usuarios));
   }, [esAdmin]);
 
-  const dataDona = visibles.map((c) => ({ name: LABEL_CATEGORIA[c], value: stats?.porCategoria[c] ?? 0, cat: c }));
+  // Dona principal: Compras/Servicios/Servicios Fijos se muestran agregados
+  // (suman sus subcategorias, y el legado si aplica) para no abultar la
+  // leyenda; el detalle de cada subcategoria va en la segunda dona.
+  const visiblesSet = new Set(visibles);
+  const dataDonaPrincipal = [
+    ...GRUPOS_VOUCHER.filter(
+      (g) => (g.legado && visiblesSet.has(g.legado)) || g.subcategorias.some((c) => visiblesSet.has(c))
+    ).map((g) => ({
+      name: g.label,
+      color: g.color,
+      value:
+        (g.legado ? stats?.porCategoria[g.legado] ?? 0 : 0) +
+        g.subcategorias.reduce((suma, c) => suma + (stats?.porCategoria[c] ?? 0), 0),
+    })),
+    ...[...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO]
+      .filter((c) => visiblesSet.has(c))
+      .map((c) => ({ name: LABEL_CATEGORIA[c], color: COLOR_CATEGORIA[c], value: stats?.porCategoria[c] ?? 0 })),
+  ];
+  const dataDonaSub = GRUPOS_VOUCHER.flatMap((g) => g.subcategorias)
+    .filter((c) => visiblesSet.has(c))
+    .map((c) => ({ name: LABEL_CATEGORIA[c], color: COLOR_CATEGORIA[c], value: stats?.porCategoria[c] ?? 0 }));
   const mesActual = meses[meses.length - 1]?.total ?? 0;
   const mesAnterior = meses[meses.length - 2]?.total ?? 0;
   const tendencia = mesActual - mesAnterior;
@@ -61,9 +89,9 @@ export default function DashboardPage() {
           <div className="text-sm text-slate-500 mb-2">Total: {stats?.total ?? 0} vouchers</div>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
-              <Pie data={dataDona} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={2}>
-                {dataDona.map((d) => (
-                  <Cell key={d.cat} fill={COLOR_CATEGORIA[d.cat as Categoria]} />
+              <Pie data={dataDonaPrincipal} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={2}>
+                {dataDonaPrincipal.map((d) => (
+                  <Cell key={d.name} fill={d.color} />
                 ))}
               </Pie>
               <Tooltip />
@@ -91,6 +119,25 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Detalle de subcategorias (Compras/Servicios/Servicios Fijos abiertos) */}
+      {dataDonaSub.length > 0 && (
+        <div className="card">
+          <h2 className="font-semibold mb-2">Detalle por subcategoría</h2>
+          <div className="text-sm text-slate-500 mb-2">Compras, Servicios y Servicios Fijos abiertos en sus subcategorías</div>
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie data={dataDonaSub} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={2}>
+                {dataDonaSub.map((d) => (
+                  <Cell key={d.name} fill={d.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Actividad reciente */}
       <div className="card">

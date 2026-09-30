@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, mensajeError } from "../api/client";
-import { CATEGORIAS, COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
+import {
+  CATEGORIAS,
+  CATEGORIAS_LEGADO,
+  CATEGORIAS_DOCUMENTO,
+  GRUPOS_VOUCHER,
+  CATEGORIAS_SUELTAS,
+  COLOR_CATEGORIA,
+  LABEL_CATEGORIA,
+  type Categoria,
+} from "../lib/categorias";
 
 interface UsuarioAdmin {
   id: string;
@@ -25,6 +34,52 @@ const PERMISOS: { key: PermKey; label: string }[] = [
   { key: "puedeVerDashboard", label: "Ver dashboard" },
   { key: "puedeDescargar", label: "Descargar" },
 ];
+
+function ChipCategoria({ c, activo, onClick }: { c: Categoria; activo: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-3 py-1.5 rounded-lg text-sm border-2"
+      style={
+        activo
+          ? { background: COLOR_CATEGORIA[c], color: "white", borderColor: COLOR_CATEGORIA[c] }
+          : { borderColor: COLOR_CATEGORIA[c], color: COLOR_CATEGORIA[c] }
+      }
+    >
+      {LABEL_CATEGORIA[c]}
+    </button>
+  );
+}
+
+// Selector de categorias permitidas, agrupado (Compras/Servicios/Servicios
+// Fijos muestran sus subcategorias juntas en vez de una lista plana).
+function SelectorCategorias({ seleccionadas, onToggle }: { seleccionadas: Categoria[]; onToggle: (c: Categoria) => void }) {
+  const chip = (c: Categoria) => (
+    <ChipCategoria key={c} c={c} activo={seleccionadas.includes(c)} onClick={() => onToggle(c)} />
+  );
+  return (
+    <div className="space-y-3">
+      {GRUPOS_VOUCHER.map((g) => (
+        <div key={g.id}>
+          <div className="text-xs font-semibold text-slate-500 uppercase mb-1">{g.label}</div>
+          <div className="flex flex-wrap gap-2">{g.subcategorias.map(chip)}</div>
+        </div>
+      ))}
+      <div>
+        <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Otras categorías</div>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIAS_SUELTAS.map(chip)}
+          {CATEGORIAS_DOCUMENTO.map(chip)}
+        </div>
+      </div>
+      <div>
+        <div className="text-xs font-semibold text-slate-400 uppercase mb-1">Legado (vouchers históricos)</div>
+        <div className="flex flex-wrap gap-2">{CATEGORIAS_LEGADO.map(chip)}</div>
+      </div>
+    </div>
+  );
+}
 
 function CategoriaChips({ categorias }: { categorias: string[] }) {
   if (categorias.length === CATEGORIAS.length) return <span className="text-xs text-slate-500">Todas</span>;
@@ -160,18 +215,10 @@ export default function AdminPage() {
           {nuevo.rol === "USUARIO" && (
             <div>
               <label className="label">Categorías permitidas</label>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORIAS.map((c) => {
-                  const activo = nuevo.categorias.includes(c);
-                  return (
-                    <button key={c} type="button" onClick={() => setNuevo({ ...nuevo, categorias: toggleCat(nuevo.categorias, c) })}
-                      className="px-3 py-1.5 rounded-lg text-sm border-2"
-                      style={activo ? { background: COLOR_CATEGORIA[c], color: "white", borderColor: COLOR_CATEGORIA[c] } : { borderColor: COLOR_CATEGORIA[c], color: COLOR_CATEGORIA[c] }}>
-                      {LABEL_CATEGORIA[c]}
-                    </button>
-                  );
-                })}
-              </div>
+              <SelectorCategorias
+                seleccionadas={nuevo.categorias}
+                onToggle={(c) => setNuevo({ ...nuevo, categorias: toggleCat(nuevo.categorias, c) })}
+              />
             </div>
           )}
 
@@ -261,19 +308,10 @@ export default function AdminPage() {
               {editando.rol === "USUARIO" && (
                 <div>
                   <label className="label">Categorías permitidas</label>
-                  <div className="flex flex-wrap gap-2">
-                    {CATEGORIAS.map((c) => {
-                      const activo = editando.categorias.includes(c);
-                      return (
-                        <button key={c} type="button"
-                          onClick={() => setEditando({ ...editando, categorias: toggleCat(editando.categorias as Categoria[], c) })}
-                          className="px-3 py-1.5 rounded-lg text-sm border-2"
-                          style={activo ? { background: COLOR_CATEGORIA[c], color: "white", borderColor: COLOR_CATEGORIA[c] } : { borderColor: COLOR_CATEGORIA[c], color: COLOR_CATEGORIA[c] }}>
-                          {LABEL_CATEGORIA[c]}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <SelectorCategorias
+                    seleccionadas={editando.categorias as Categoria[]}
+                    onToggle={(c) => setEditando({ ...editando, categorias: toggleCat(editando.categorias as Categoria[], c) })}
+                  />
                 </div>
               )}
               <div>
