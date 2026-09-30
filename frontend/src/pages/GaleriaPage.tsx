@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, mensajeError } from "../api/client";
 import AuthImage from "../components/AuthImage";
 import { useAuth } from "../store/auth";
 import {
-  CATEGORIAS,
   CATEGORIAS_LEGADO,
   CATEGORIAS_DOCUMENTO,
   GRUPOS_VOUCHER,
@@ -83,30 +82,45 @@ const FILTROS_INICIALES = {
 export default function GaleriaPage() {
   const usuario = useAuth((s) => s.usuario);
   const esAdmin = !!usuario?.esAdmin;
-  // Categorias que el usuario puede ver (admin = todas).
-  const visibles = (esAdmin ? CATEGORIAS : CATEGORIAS.filter((c) => usuario?.categorias.includes(c))) as Categoria[];
 
+  const [searchParams] = useSearchParams();
   const [filtros, setFiltros] = useState(() => {
+    const categoriaUrl = searchParams.get("categoria");
+    if (categoriaUrl) return { ...FILTROS_INICIALES, categoria: categoriaUrl.toUpperCase() };
     const guardado = sessionStorage.getItem("filtrosGaleria");
     return guardado ? JSON.parse(guardado) : FILTROS_INICIALES;
   });
+
+  // Los enlaces del menu lateral (ej. "Galería > Compras > Proveedores") navegan
+  // a /galeria?categoria=XXX (o a /galeria sin parametro para "Todas");
+  // sincronizamos el filtro cada vez que cambian, salvo en el primer render
+  // (ahi el useState de arriba ya decidio entre la URL y lo guardado en sesion).
+  const primerRender = useRef(true);
+  useEffect(() => {
+    if (primerRender.current) {
+      primerRender.current = false;
+      return;
+    }
+    const categoriaUrl = searchParams.get("categoria");
+    setPage(1);
+    setFiltros((f: any) => ({ ...f, categoria: categoriaUrl ? categoriaUrl.toUpperCase() : "TODAS" }));
+  }, [searchParams]);
   const [items, setItems] = useState<VoucherItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [conteos, setConteos] = useState<Record<string, number>>({});
   const [seleccion, setSeleccion] = useState<VoucherItem | null>(null);
   const [recarga, setRecarga] = useState(0);
   const [editando, setEditando] = useState(false);
   const [fechaEdit, setFechaEdit] = useState("");
   const [descripcionEdit, setDescripcionEdit] = useState("");
+  const [categoriaEdit, setCategoriaEdit] = useState<Categoria | "">("");
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [errorEdit, setErrorEdit] = useState("");
 
   useEffect(() => {
     api.get("/users").then(({ data }) => setUsuarios(data.usuarios));
-    api.get("/vouchers/stats").then(({ data }) => setConteos(data.porCategoria));
   }, [recarga]);
 
   useEffect(() => {
@@ -150,6 +164,7 @@ export default function GaleriaPage() {
     if (!seleccion) return;
     setFechaEdit(fechaInputValue(seleccion.fechaVoucher));
     setDescripcionEdit(seleccion.descripcion ?? "");
+    setCategoriaEdit(seleccion.categoria);
     setErrorEdit("");
     setEditando(true);
   };
@@ -159,11 +174,15 @@ export default function GaleriaPage() {
     setGuardandoEdit(true);
     setErrorEdit("");
     try {
-      const { data } = await api.patch(`/vouchers/${seleccion.voucherId}`, {
+      const payload: { fecha: string; descripcion: string; categoria?: Categoria } = {
         fecha: fechaEdit,
         descripcion: descripcionEdit,
-      });
-      setSeleccion((s) => (s ? { ...s, fechaVoucher: data.fechaVoucher, descripcion: data.descripcion } : s));
+      };
+      // Solo se envia si realmente cambio: evita pisar la categoria legado
+      // cuando el admin no tocó el selector (no aparece como opción elegible).
+      if (categoriaEdit && categoriaEdit !== seleccion.categoria) payload.categoria = categoriaEdit;
+      const { data } = await api.patch(`/vouchers/${seleccion.voucherId}`, payload);
+      setSeleccion((s) => (s ? { ...s, fechaVoucher: data.fechaVoucher, descripcion: data.descripcion, categoria: data.categoria } : s));
       setEditando(false);
       setRecarga((r) => r + 1);
     } catch (e) {
@@ -183,8 +202,6 @@ export default function GaleriaPage() {
     setFiltros(FILTROS_INICIALES);
   };
 
-  const totalGeneral = Object.values(conteos).reduce((a, b) => a + b, 0);
-
   const descargar = async (v: VoucherItem) => {
     const { data } = await api.get(`/vouchers/${v.voucherId}/file`, { params: { download: 1 }, responseType: "blob" });
     const url = URL.createObjectURL(data);
@@ -201,59 +218,6 @@ export default function GaleriaPage() {
         <h1 className="text-2xl font-bold text-primario">Galería</h1>
         <Link to="/papelera" className="btn-ghost text-sm whitespace-nowrap">🗑️ Papelera</Link>
       </div>
-
-      {/* Tabs por categoria con conteo, agrupadas por Compras/Servicios/Servicios Fijos */}
-      {(() => {
-        const permitidas = new Set(visibles);
-        const tab = (c: Categoria) => (
-          <button
-            key={c}
-            onClick={() => cambiar("categoria", c)}
-            className="px-4 py-2 rounded-lg text-sm font-medium border"
-            style={
-              filtros.categoria === c
-                ? { background: COLOR_CATEGORIA[c], color: "white", borderColor: COLOR_CATEGORIA[c] }
-                : { borderColor: COLOR_CATEGORIA[c], color: COLOR_CATEGORIA[c] }
-            }
-          >
-            {LABEL_CATEGORIA[c]} ({conteos[c] ?? 0})
-          </button>
-        );
-        const grupos = GRUPOS_VOUCHER.map((g) => ({
-          ...g,
-          subcategorias: g.subcategorias.filter((c) => permitidas.has(c)),
-        })).filter((g) => g.subcategorias.length > 0);
-        const sueltas = [...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO].filter((c) => permitidas.has(c));
-        const legado = CATEGORIAS_LEGADO.filter((c) => permitidas.has(c));
-
-        return (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => cambiar("categoria", "TODAS")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                  filtros.categoria === "TODAS" ? "bg-primario text-white border-primario" : "bg-white border-slate-200"
-                }`}
-              >
-                Todas ({totalGeneral})
-              </button>
-              {sueltas.map(tab)}
-            </div>
-            {grupos.map((g) => (
-              <div key={g.id} className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase mr-1">{g.label}:</span>
-                {g.subcategorias.map(tab)}
-              </div>
-            ))}
-            {legado.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase mr-1">Legado:</span>
-                {legado.map(tab)}
-              </div>
-            )}
-          </div>
-        );
-      })()}
 
       {/* Filtros */}
       <div className="card grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -357,20 +321,43 @@ export default function GaleriaPage() {
             {editando ? (
               <div className="px-4 pb-2 space-y-3 text-sm">
                 <div>
+                  <label className="label text-xs">Nota / descripción</label>
+                  <input
+                    className="input"
+                    value={descripcionEdit}
+                    onChange={(e) => setDescripcionEdit(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Léela antes de elegir la categoría: suele indicar a cuál pertenece.</p>
+                </div>
+                <div>
+                  <label className="label text-xs">Categoría</label>
+                  <select className="input" value={categoriaEdit} onChange={(e) => setCategoriaEdit(e.target.value as Categoria)}>
+                    {CATEGORIAS_LEGADO.includes(seleccion.categoria as (typeof CATEGORIAS_LEGADO)[number]) && (
+                      <option value={seleccion.categoria}>
+                        {LABEL_CATEGORIA[seleccion.categoria]} (legado — mueve a una subcategoría)
+                      </option>
+                    )}
+                    {GRUPOS_VOUCHER.map((g) => (
+                      <optgroup key={g.id} label={g.label}>
+                        {g.subcategorias.map((c) => (
+                          <option key={c} value={c}>{LABEL_CATEGORIA[c]}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <optgroup label="Otras categorías">
+                      {[...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO].map((c) => (
+                        <option key={c} value={c}>{LABEL_CATEGORIA[c]}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+                <div>
                   <label className="label text-xs">Fecha del voucher</label>
                   <input
                     type="date"
                     className="input"
                     value={fechaEdit}
                     onChange={(e) => setFechaEdit(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="label text-xs">Nota / descripción</label>
-                  <input
-                    className="input"
-                    value={descripcionEdit}
-                    onChange={(e) => setDescripcionEdit(e.target.value)}
                   />
                 </div>
                 {errorEdit && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-xs">{errorEdit}</div>}

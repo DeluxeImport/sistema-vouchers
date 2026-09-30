@@ -169,6 +169,10 @@ pm2 restart sistema-vouchers
 
 Como la base y las imágenes están en `data/` (fuera del código), no se pierden.
 
+> Para el checklist de verificación post-despliegue, el warning de CPU
+> conocido, ubicación de logs/backups y las reglas de seguridad del
+> servidor, ver [`MANTENIMIENTO.md`](MANTENIMIENTO.md).
+
 ---
 
 ## 10. Respaldos y mantenimiento

@@ -90,20 +90,33 @@ export const PREFIJO_CATEGORIA: Record<Categoria, string> = {
 export interface GrupoCategoria {
   id: string;
   label: string;
+  // Color representativo del grupo (para verlo agregado, ej. en un resumen).
+  color: string;
+  // Categoria plana historica que se suma a este grupo en los totales, si aplica.
+  legado?: Categoria;
   subcategorias: Categoria[];
 }
 
 // Categorias que ahora se organizan en subcategorias obligatorias.
 export const GRUPOS_VOUCHER: GrupoCategoria[] = [
-  { id: "compras", label: "Compras", subcategorias: ["COMPRAS_PROVEEDORES", "COMPRAS_OFICINA"] },
+  {
+    id: "compras",
+    label: "Compras",
+    color: COLOR_CATEGORIA.COMPRAS,
+    legado: "COMPRAS",
+    subcategorias: ["COMPRAS_PROVEEDORES", "COMPRAS_OFICINA"],
+  },
   {
     id: "servicios",
     label: "Servicios",
+    color: COLOR_CATEGORIA.SERVICIOS,
+    legado: "SERVICIOS",
     subcategorias: ["SERVICIOS_LUZ", "SERVICIOS_AGUA", "SERVICIOS_MANTENIMIENTO", "SERVICIOS_INTERNET"],
   },
   {
     id: "servicios_fijos",
     label: "Servicios Fijos",
+    color: "#0D9488",
     subcategorias: ["SFIJOS_CELULAR", "SFIJOS_CAMARA", "SFIJOS_PRESUPUESTO", "SFIJOS_FLETE"],
   },
 ];
