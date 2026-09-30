@@ -1,9 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { CATEGORIAS } from "../src/config.js";
 
 const prisma = new PrismaClient();
-
-const CATEGORIAS = ["COMPRAS", "RECOMPRAS", "SERVICIOS", "ALQUILER", "NOTA", "FACTURA", "BOLETA"];
 
 // Solo se asegura la cuenta ADMIN de arranque (usuario1). El resto de
 // usuarios los crea el admin desde el panel /admin. Asi un reinicio no

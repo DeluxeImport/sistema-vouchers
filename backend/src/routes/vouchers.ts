@@ -3,7 +3,7 @@ import multer from "multer";
 import fs from "node:fs";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { config, CATEGORIAS, type Categoria } from "../config.js";
+import { config, CATEGORIAS, CATEGORIAS_SUBIBLES, type Categoria } from "../config.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { procesarYGuardar, rutaAbsolutaVoucher, borrarArchivoVoucher, DIAS_PAPELERA } from "../services/voucherService.js";
 import { audit, getIp } from "../utils/audit.js";
@@ -41,7 +41,7 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
     return res.status(403).json({ error: "No tienes permiso para subir" });
   }
   const categoria = String(req.body.categoria ?? "").toUpperCase() as Categoria;
-  if (!CATEGORIAS.includes(categoria)) {
+  if (!CATEGORIAS_SUBIBLES.includes(categoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
     return res.status(400).json({ error: "Categoria invalida" });
   }
   if (!req.usuario!.esAdmin && !req.usuario!.categorias.includes(categoria)) {

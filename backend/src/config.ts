@@ -22,16 +22,51 @@ if (config.nodeEnv === "production") {
   }
 }
 
-// Grupo 1: vouchers. Grupo 2: documentos (nota, factura, boleta).
-export const CATEGORIAS_VOUCHER = ["COMPRAS", "RECOMPRAS", "SERVICIOS", "ALQUILER"] as const;
+// COMPRAS y SERVICIOS ya no se usan para subir vouchers nuevos (se reemplazaron
+// por subcategorias), pero se conservan como categorias validas porque pueden
+// existir vouchers historicos guardados con ellas.
+export const CATEGORIAS_LEGADO = ["COMPRAS", "SERVICIOS"] as const;
+
+// Grupo 1: vouchers (incluye las subcategorias de Compras, Servicios y
+// Servicios Fijos). Grupo 2: documentos (nota, factura, boleta).
+export const CATEGORIAS_VOUCHER = [
+  "COMPRAS_PROVEEDORES",
+  "COMPRAS_OFICINA",
+  "RECOMPRAS",
+  "SERVICIOS_LUZ",
+  "SERVICIOS_AGUA",
+  "SERVICIOS_MANTENIMIENTO",
+  "SERVICIOS_INTERNET",
+  "SFIJOS_CELULAR",
+  "SFIJOS_CAMARA",
+  "SFIJOS_PRESUPUESTO",
+  "SFIJOS_FLETE",
+  "ALQUILER",
+] as const;
 export const CATEGORIAS_DOCUMENTO = ["NOTA", "FACTURA", "BOLETA"] as const;
-export const CATEGORIAS = [...CATEGORIAS_VOUCHER, ...CATEGORIAS_DOCUMENTO] as const;
+
+// Todas las categorias validas (para permisos, filtros y contadores):
+// incluye el legado para no romper vouchers historicos.
+export const CATEGORIAS = [...CATEGORIAS_LEGADO, ...CATEGORIAS_VOUCHER, ...CATEGORIAS_DOCUMENTO] as const;
 export type Categoria = (typeof CATEGORIAS)[number];
+
+// Lo que puede elegirse al subir un voucher nuevo (sin el legado).
+export const CATEGORIAS_SUBIBLES = [...CATEGORIAS_VOUCHER, ...CATEGORIAS_DOCUMENTO] as const;
 
 export const PREFIJOS: Record<Categoria, string> = {
   COMPRAS: "CP",
-  RECOMPRAS: "RE",
   SERVICIOS: "SV",
+  COMPRAS_PROVEEDORES: "CPP",
+  COMPRAS_OFICINA: "CPO",
+  RECOMPRAS: "RE",
+  SERVICIOS_LUZ: "SVL",
+  SERVICIOS_AGUA: "SVA",
+  SERVICIOS_MANTENIMIENTO: "SVM",
+  SERVICIOS_INTERNET: "SVI",
+  SFIJOS_CELULAR: "SFC",
+  SFIJOS_CAMARA: "SFM",
+  SFIJOS_PRESUPUESTO: "SFP",
+  SFIJOS_FLETE: "SFL",
   ALQUILER: "AL",
   NOTA: "NT",
   FACTURA: "FA",
@@ -40,8 +75,18 @@ export const PREFIJOS: Record<Categoria, string> = {
 
 export const CARPETAS: Record<Categoria, string> = {
   COMPRAS: "compras",
-  RECOMPRAS: "recompras",
   SERVICIOS: "servicios",
+  COMPRAS_PROVEEDORES: "compras/proveedores",
+  COMPRAS_OFICINA: "compras/oficina",
+  RECOMPRAS: "recompras",
+  SERVICIOS_LUZ: "servicios/luz",
+  SERVICIOS_AGUA: "servicios/agua",
+  SERVICIOS_MANTENIMIENTO: "servicios/mantenimiento",
+  SERVICIOS_INTERNET: "servicios/internet",
+  SFIJOS_CELULAR: "servicios_fijos/celular",
+  SFIJOS_CAMARA: "servicios_fijos/camara_comercio",
+  SFIJOS_PRESUPUESTO: "servicios_fijos/presupuesto_varios",
+  SFIJOS_FLETE: "servicios_fijos/flete",
   ALQUILER: "alquiler",
   NOTA: "nota",
   FACTURA: "factura",

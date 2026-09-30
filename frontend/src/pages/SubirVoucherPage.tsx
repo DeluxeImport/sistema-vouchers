@@ -3,11 +3,13 @@ import { useDropzone } from "react-dropzone";
 import { api, mensajeError } from "../api/client";
 import { useAuth } from "../store/auth";
 import {
-  CATEGORIAS_VOUCHER,
   CATEGORIAS_DOCUMENTO,
+  GRUPOS_VOUCHER,
+  CATEGORIAS_SUELTAS,
   COLOR_CATEGORIA,
   LABEL_CATEGORIA,
   type Categoria,
+  type GrupoCategoria,
 } from "../lib/categorias";
 
 // Categorias de documento que ademas admiten carga directa de PDF (sin foto).
@@ -15,7 +17,8 @@ const CATEGORIAS_PDF = ["FACTURA", "BOLETA"] as const;
 
 interface TarjetaProps {
   titulo: string;
-  categorias: readonly Categoria[];
+  grupos: GrupoCategoria[];
+  sueltas: readonly Categoria[];
   sustantivo: string; // "voucher" | "documento"
 }
 
@@ -33,7 +36,22 @@ function fechaHoy(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function TarjetaSubida({ titulo, categorias, sustantivo }: TarjetaProps) {
+function BotonCategoria({ c, activa, onClick }: { c: Categoria; activa: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border-2 py-3 text-sm font-medium transition ${
+        activa ? "text-white" : "bg-white text-slate-600"
+      }`}
+      style={activa ? { background: COLOR_CATEGORIA[c], borderColor: COLOR_CATEGORIA[c] } : { borderColor: COLOR_CATEGORIA[c] }}
+    >
+      {LABEL_CATEGORIA[c]}
+    </button>
+  );
+}
+
+function TarjetaSubida({ titulo, grupos, sueltas, sustantivo }: TarjetaProps) {
   const [categoria, setCategoria] = useState<Categoria | "">("");
   const [items, setItems] = useState<ItemSubida[]>([]);
   const [error, setError] = useState("");
@@ -105,27 +123,27 @@ function TarjetaSubida({ titulo, categorias, sustantivo }: TarjetaProps) {
       {error && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</div>}
 
       <div className="card space-y-5">
-        <div>
-          <label className="label">Categoría</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {categorias.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCategoria(c)}
-                className={`rounded-lg border-2 py-3 text-sm font-medium transition ${
-                  categoria === c ? "text-white" : "bg-white text-slate-600"
-                }`}
-                style={
-                  categoria === c
-                    ? { background: COLOR_CATEGORIA[c], borderColor: COLOR_CATEGORIA[c] }
-                    : { borderColor: COLOR_CATEGORIA[c] }
-                }
-              >
-                {LABEL_CATEGORIA[c]}
-              </button>
-            ))}
-          </div>
+        <div className="space-y-4">
+          {grupos.map((g) => (
+            <div key={g.id}>
+              <label className="label">{g.label}</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {g.subcategorias.map((c) => (
+                  <BotonCategoria key={c} c={c} activa={categoria === c} onClick={() => setCategoria(c)} />
+                ))}
+              </div>
+            </div>
+          ))}
+          {sueltas.length > 0 && (
+            <div>
+              <label className="label">{grupos.length > 0 ? "Otras categorías" : "Categoría"}</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {sueltas.map((c) => (
+                  <BotonCategoria key={c} c={c} activa={categoria === c} onClick={() => setCategoria(c)} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
@@ -369,22 +387,27 @@ function TarjetaDocumentoPdf({ categoria }: TarjetaDocumentoPdfProps) {
 export default function SubirVoucherPage() {
   const usuario = useAuth((s) => s.usuario);
   const permitidas = new Set(usuario?.categorias ?? []);
-  const vouchers = CATEGORIAS_VOUCHER.filter((c) => permitidas.has(c)) as Categoria[];
+  const gruposVoucher = GRUPOS_VOUCHER.map((g) => ({
+    ...g,
+    subcategorias: g.subcategorias.filter((c) => permitidas.has(c)),
+  })).filter((g) => g.subcategorias.length > 0);
+  const sueltasVoucher = CATEGORIAS_SUELTAS.filter((c) => permitidas.has(c));
   const documentos = CATEGORIAS_DOCUMENTO.filter((c) => permitidas.has(c)) as Categoria[];
   const categoriasPdf = CATEGORIAS_PDF.filter((c) => permitidas.has(c));
+  const hayVoucher = gruposVoucher.length > 0 || sueltasVoucher.length > 0;
 
   return (
     <div className="space-y-8 max-w-3xl">
-      {vouchers.length > 0 && (
-        <TarjetaSubida titulo="Subir Voucher" categorias={vouchers} sustantivo="voucher" />
+      {hayVoucher && (
+        <TarjetaSubida titulo="Subir Voucher" grupos={gruposVoucher} sueltas={sueltasVoucher} sustantivo="voucher" />
       )}
       {documentos.length > 0 && (
-        <TarjetaSubida titulo="Subir Documento" categorias={documentos} sustantivo="documento" />
+        <TarjetaSubida titulo="Subir Documento" grupos={[]} sueltas={documentos} sustantivo="documento" />
       )}
       {categoriasPdf.map((c) => (
         <TarjetaDocumentoPdf key={c} categoria={c} />
       ))}
-      {vouchers.length === 0 && documentos.length === 0 && (
+      {!hayVoucher && documentos.length === 0 && (
         <div className="card text-slate-500">No tienes categorías habilitadas para subir. Contacta al administrador.</div>
       )}
     </div>

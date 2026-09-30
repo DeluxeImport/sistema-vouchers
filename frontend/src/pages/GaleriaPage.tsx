@@ -3,7 +3,16 @@ import { Link } from "react-router-dom";
 import { api, mensajeError } from "../api/client";
 import AuthImage from "../components/AuthImage";
 import { useAuth } from "../store/auth";
-import { CATEGORIAS, COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
+import {
+  CATEGORIAS,
+  CATEGORIAS_LEGADO,
+  CATEGORIAS_DOCUMENTO,
+  GRUPOS_VOUCHER,
+  CATEGORIAS_SUELTAS,
+  COLOR_CATEGORIA,
+  LABEL_CATEGORIA,
+  type Categoria,
+} from "../lib/categorias";
 
 interface VoucherItem {
   voucherId: string;
@@ -193,17 +202,10 @@ export default function GaleriaPage() {
         <Link to="/papelera" className="btn-ghost text-sm whitespace-nowrap">🗑️ Papelera</Link>
       </div>
 
-      {/* Tabs por categoria con conteo */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => cambiar("categoria", "TODAS")}
-          className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-            filtros.categoria === "TODAS" ? "bg-primario text-white border-primario" : "bg-white border-slate-200"
-          }`}
-        >
-          Todas ({totalGeneral})
-        </button>
-        {visibles.map((c) => (
+      {/* Tabs por categoria con conteo, agrupadas por Compras/Servicios/Servicios Fijos */}
+      {(() => {
+        const permitidas = new Set(visibles);
+        const tab = (c: Categoria) => (
           <button
             key={c}
             onClick={() => cambiar("categoria", c)}
@@ -216,8 +218,42 @@ export default function GaleriaPage() {
           >
             {LABEL_CATEGORIA[c]} ({conteos[c] ?? 0})
           </button>
-        ))}
-      </div>
+        );
+        const grupos = GRUPOS_VOUCHER.map((g) => ({
+          ...g,
+          subcategorias: g.subcategorias.filter((c) => permitidas.has(c)),
+        })).filter((g) => g.subcategorias.length > 0);
+        const sueltas = [...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO].filter((c) => permitidas.has(c));
+        const legado = CATEGORIAS_LEGADO.filter((c) => permitidas.has(c));
+
+        return (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => cambiar("categoria", "TODAS")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                  filtros.categoria === "TODAS" ? "bg-primario text-white border-primario" : "bg-white border-slate-200"
+                }`}
+              >
+                Todas ({totalGeneral})
+              </button>
+              {sueltas.map(tab)}
+            </div>
+            {grupos.map((g) => (
+              <div key={g.id} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase mr-1">{g.label}:</span>
+                {g.subcategorias.map(tab)}
+              </div>
+            ))}
+            {legado.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase mr-1">Legado:</span>
+                {legado.map(tab)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Filtros */}
       <div className="card grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
