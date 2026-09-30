@@ -184,9 +184,59 @@ def _rotar(img, grados: int):
     raise ValueError(f"rotacion no soportada: {grados}")
 
 
+def _reconstruir_lineas(detecciones) -> str:
+    """
+    EasyOCR devuelve cada region de texto por separado, SIN garantizar orden
+    de lectura. En una foto con mucho contenido (ej. un recibo sobre billetes
+    con sus propios numeros de serie), eso significa que palabras de una
+    misma linea -- "25", "de", "Septiembre", "de", "2026" -- pueden terminar
+    lejos unas de otras en el texto final, separadas por texto de otra parte
+    de la imagen. La fecha deja de reconocerse aunque cada palabra se haya
+    leido bien, porque nunca aparecen juntas en el texto.
+
+    Agrupa los cuadros de texto por cercania vertical (su centro Y) y ordena
+    cada grupo de izquierda a derecha, para que el texto final se parezca a
+    como se lee la foto de verdad.
+    """
+    cajas = []
+    for bbox, texto, _confianza in detecciones:
+        ys = [p[1] for p in bbox]
+        xs = [p[0] for p in bbox]
+        cajas.append((sum(ys) / len(ys), min(xs), max(ys) - min(ys), texto))
+
+    if not cajas:
+        return ""
+
+    cajas.sort(key=lambda c: c[0])  # de arriba a abajo
+    alto_promedio = sum(c[2] for c in cajas) / len(cajas)
+    umbral = max(alto_promedio * 0.6, 5)
+
+    # Comparamos contra el PROMEDIO de la linea actual, no contra la ultima
+    # caja agregada -- comparar solo contra la ultima deja que una cadena de
+    # cajas cercanas entre si (cada una a poco menos del umbral de la
+    # siguiente) vaya arrastrando la linea de a poquitos por toda la foto,
+    # aunque el principio y el final terminen lejísimos.
+    lineas = [[cajas[0]]]
+    suma_y_linea = cajas[0][0]
+    for caja in cajas[1:]:
+        promedio_y_linea = suma_y_linea / len(lineas[-1])
+        if abs(caja[0] - promedio_y_linea) <= umbral:
+            lineas[-1].append(caja)
+            suma_y_linea += caja[0]
+        else:
+            lineas.append([caja])
+            suma_y_linea = caja[0]
+
+    texto_lineas = []
+    for linea in lineas:
+        linea.sort(key=lambda c: c[1])  # de izquierda a derecha
+        texto_lineas.append(" ".join(c[3] for c in linea))
+    return "\n".join(texto_lineas)
+
+
 def _leer_texto_ocr(img) -> str:
-    lineas = _obtener_lector_ocr().readtext(img, detail=0)
-    return "\n".join(lineas)
+    detecciones = _obtener_lector_ocr().readtext(img, detail=1)
+    return _reconstruir_lineas(detecciones)
 
 
 def detectar_fecha(imagen_bytes: bytes) -> Optional[str]:
