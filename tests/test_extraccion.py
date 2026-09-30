@@ -1,6 +1,7 @@
 import io
 
 import qrcode
+from PIL import Image, ImageDraw, ImageFont
 
 from bot.extraccion import detectar_fecha, fecha_de_qr_sunat, fecha_de_texto
 
@@ -61,6 +62,16 @@ def test_fecha_de_texto_fecha_imposible_no_hace_crashear():
     assert fecha_de_texto("32/13/2026") is None
 
 
+def test_fecha_de_texto_tolera_mes_mal_leido_por_ocr():
+    # "sptlembre" es justo lo que EasyOCR leyo de una imagen real de prueba
+    # con "septiembre" en una foto girada 90 grados.
+    assert fecha_de_texto("Trujillo, 30 de sptlembre de 2026") == "2026-09-30"
+
+
+def test_fecha_de_texto_mes_irreconocible_no_inventa_nada():
+    assert fecha_de_texto("30 de xyzxyz de 2026") is None
+
+
 # --- detectar_fecha (punta a punta con un QR real, sin necesitar OCR) --
 
 
@@ -72,3 +83,38 @@ def test_detectar_fecha_via_qr_no_necesita_ocr():
 
 def test_detectar_fecha_imagen_invalida_no_crashea():
     assert detectar_fecha(b"no-es-una-imagen-real") is None
+
+
+# --- detectar_fecha con foto de papel girada (usa el OCR real; mas lenta) --
+
+
+def _fuente_legible():
+    # La fuente por defecto de PIL es un bitmap minusculo (ilegible para
+    # cualquier OCR); usamos una fuente real para que la prueba se parezca a
+    # una foto de verdad, no a una tipografia de juguete.
+    try:
+        return ImageFont.truetype("arial.ttf", 28)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _png_de_texto(texto: str, grados: int = 0) -> bytes:
+    img = Image.new("RGB", (600, 120), color="white")
+    ImageDraw.Draw(img).text((10, 40), texto, fill="black", font=_fuente_legible())
+    if grados:
+        img = img.rotate(grados, expand=True, fillcolor="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_detectar_fecha_ocr_con_foto_de_costado():
+    # Simula justo el caso reportado: un recibo de papel (sin QR) fotografiado
+    # girado 90 grados en vez de derecho.
+    imagen = _png_de_texto("Trujillo, 30 de septiembre de 2026", grados=90)
+    assert detectar_fecha(imagen) == "2026-09-30"
+
+
+def test_detectar_fecha_ocr_con_foto_al_reves():
+    imagen = _png_de_texto("Fecha 15/03/2026", grados=180)
+    assert detectar_fecha(imagen) == "2026-03-15"

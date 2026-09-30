@@ -64,9 +64,40 @@ _MESES = {
 # Separador tolerante: el OCR a veces confunde "/" con "," "'" "." etc.
 _SEP = r"\s*[/\-.,'´ʼ]\s*"
 _PATRON_NUMERICO = re.compile(r"\b(\d{1,2})" + _SEP + r"(\d{1,2})" + _SEP + r"(\d{2,4})\b")
-_PATRON_TEXTO = re.compile(
-    r"\b(\d{1,2})\s+de\s+(" + "|".join(_MESES) + r")\s+de\s+(\d{4})\b", re.IGNORECASE
-)
+# El nombre del mes se busca por separado y de forma tolerante (ver
+# _mes_mas_parecido) porque el OCR suele leer mal una letra suelta en
+# palabras largas ("septiembre" -> "sptlembre"); exigir coincidencia exacta
+# descartaba fechas que en realidad se leyeron casi perfecto.
+_PATRON_TEXTO = re.compile(r"\b(\d{1,2})\s+de\s+([a-zA-Zá-úÁ-Ú]+)\s+de\s+(\d{4})\b", re.IGNORECASE)
+
+
+def _distancia_edicion(a: str, b: str) -> int:
+    """Distancia de Levenshtein simple (sin dependencias externas)."""
+    if a == b:
+        return 0
+    fila = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        nueva = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            costo = 0 if ca == cb else 1
+            nueva[j] = min(fila[j] + 1, nueva[j - 1] + 1, fila[j - 1] + costo)
+        fila = nueva
+    return fila[-1]
+
+
+def _mes_mas_parecido(palabra: str) -> Optional[int]:
+    """Encuentra el mes cuyo nombre se parece mas a lo que leyo el OCR,
+    tolerando 1-2 letras mal leidas (un error tipico de OCR en fuentes
+    chicas o fotos con angulo, no un problema del algoritmo de fechas)."""
+    palabra = palabra.lower()
+    if palabra in _MESES:
+        return _MESES[palabra]
+    mejor_mes, mejor_distancia = None, 3  # maximo tolerado
+    for nombre, numero in _MESES.items():
+        d = _distancia_edicion(palabra, nombre)
+        if d < mejor_distancia:
+            mejor_mes, mejor_distancia = numero, d
+    return mejor_mes
 
 
 def fecha_de_texto(texto: str) -> Optional[str]:
@@ -85,11 +116,12 @@ def fecha_de_texto(texto: str) -> Optional[str]:
     m = _PATRON_TEXTO.search(texto)
     if m:
         dia, mes_texto, anio = m.groups()
-        mes = _MESES[mes_texto.lower()]
-        try:
-            return datetime(int(anio), mes, int(dia)).strftime("%Y-%m-%d")
-        except ValueError:
-            pass
+        mes = _mes_mas_parecido(mes_texto)
+        if mes is not None:
+            try:
+                return datetime(int(anio), mes, int(dia)).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
 
     return None
 
@@ -103,18 +135,36 @@ def _obtener_lector_ocr():
     return _lector_ocr
 
 
-def _leer_texto_ocr(imagen_bytes: bytes) -> str:
-    img = _decodificar_imagen(imagen_bytes)
-    if img is None:
-        return ""
+# Comprobantes de papel (no electronicos) suelen llegar fotografiados de
+# costado, al reves, o con algo de angulo -- a diferencia del QR (que se
+# detecta en cualquier rotacion por diseño), el OCR de texto si es sensible
+# a la orientacion. Probamos las 4 rotaciones derechas y nos quedamos con la
+# primera que produzca una fecha reconocible.
+_ROTACIONES = (0, 90, 180, 270)
+
+
+def _rotar(img, grados: int):
+    if grados == 0:
+        return img
+    if grados == 90:
+        return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+    if grados == 180:
+        return cv2.rotate(img, cv2.ROTATE_180)
+    if grados == 270:
+        return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    raise ValueError(f"rotacion no soportada: {grados}")
+
+
+def _leer_texto_ocr(img) -> str:
     lineas = _obtener_lector_ocr().readtext(img, detail=0)
     return "\n".join(lineas)
 
 
 def detectar_fecha(imagen_bytes: bytes) -> Optional[str]:
     """
-    Punto de entrada: intenta QR primero, despues OCR. Devuelve la fecha en
-    YYYY-MM-DD, o None si no se pudo detectar por ningun medio.
+    Punto de entrada: intenta QR primero (cualquier rotacion), despues OCR
+    probando las 4 rotaciones derechas. Devuelve la fecha en YYYY-MM-DD, o
+    None si no se pudo detectar por ningun medio.
 
     Es una funcion sincrona (bloqueante, sobre todo el OCR) -- quien la llama
     desde un handler async debe correrla en un executor para no trabar el
@@ -126,8 +176,16 @@ def detectar_fecha(imagen_bytes: bytes) -> Optional[str]:
         if fecha:
             return fecha
 
-    try:
-        texto = _leer_texto_ocr(imagen_bytes)
-    except Exception:
+    img = _decodificar_imagen(imagen_bytes)
+    if img is None:
         return None
-    return fecha_de_texto(texto)
+
+    for grados in _ROTACIONES:
+        try:
+            texto = _leer_texto_ocr(_rotar(img, grados))
+        except Exception:
+            continue
+        fecha = fecha_de_texto(texto)
+        if fecha:
+            return fecha
+    return None
