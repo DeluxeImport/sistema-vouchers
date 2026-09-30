@@ -9,6 +9,7 @@ import { apiLimiter } from "./middleware/rateLimit.js";
 import authRoutes from "./routes/auth.js";
 import voucherRoutes from "./routes/vouchers.js";
 import userRoutes from "./routes/users.js";
+import botRoutes from "./routes/bot.js";
 import { limpiarPapelera } from "./services/voucherService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +54,7 @@ app.use("/api", apiLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/vouchers", voucherRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/bot", botRoutes);
 
 // En produccion, el backend sirve el frontend ya compilado (SPA de Vite).
 // Asi todo corre en un solo servicio (un solo puerto detras de Nginx).

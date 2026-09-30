@@ -10,6 +10,11 @@ export const config = {
   storagePath: process.env.STORAGE_PATH ?? "./storage/vouchers",
   maxFileSize: Number(process.env.MAX_FILE_SIZE ?? 10485760),
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  // Token de servicio (Bearer) que usa el bot de Telegram para llamar a /api/bot/*.
+  // No es un JWT de usuario: es un secreto compartido fijo, distinto del login web.
+  botServiceToken: process.env.BOT_SERVICE_TOKEN ?? "",
+  // Username del bot (sin @), para armar el deep link t.me/<bot>?start=TOKEN.
+  telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME ?? "",
 };
 
 // En produccion exigimos un JWT_SECRET fuerte: el sistema no arranca con la
@@ -18,6 +23,13 @@ if (config.nodeEnv === "production") {
   if (!process.env.JWT_SECRET || config.jwtSecret === "dev-secret" || config.jwtSecret.length < 32) {
     throw new Error(
       "JWT_SECRET ausente o debil. Define en el .env una clave aleatoria de al menos 32 caracteres para produccion."
+    );
+  }
+  // Mismo criterio que el JWT: sin un token de servicio fuerte, cualquiera
+  // podria golpear /api/bot/* y crear vouchers o vincular cuentas ajenas.
+  if (!config.botServiceToken || config.botServiceToken.length < 32) {
+    throw new Error(
+      "BOT_SERVICE_TOKEN ausente o debil. Define en el .env una clave aleatoria de al menos 32 caracteres para produccion."
     );
   }
 }
