@@ -28,10 +28,13 @@ model Usuario {
   ultimoAcceso  DateTime? @map("ultimo_acceso")
   creadoEn      DateTime  @default(now()) @map("creado_en")
   actualizado   DateTime  @updatedAt @map("actualizado")
+  // Cuenta de Telegram vinculada (bot de registro automatico). null = no vinculada.
+  telegramUserId String? @unique @map("telegram_user_id")
 
   vouchers Voucher[]
   sesiones Sesion[]
   auditLogs AuditLog[]
+  tokensVinculacion TokenVinculacion[]
 
   @@map("usuarios")
 }
@@ -94,4 +97,29 @@ model Sesion {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("sesiones")
+}
+
+// Token de un solo uso para vincular una cuenta con el bot de Telegram
+// (boton "Vincular Telegram" en el perfil -> deep link t.me/<Bot>?start=TOKEN).
+model TokenVinculacion {
+  token     String   @id
+  usuarioId String   @map("usuario_id")
+  expiraEn  DateTime @map("expira_en")
+  usado     Boolean  @default(false)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("tokens_vinculacion")
+}
+
+// Grupos de Telegram registrados desde donde el bot puede recibir comprobantes.
+// Solo informativo (area/centro de costo para reportes); NO filtra categorias,
+// eso depende unicamente de los permisos del usuario que sube la foto.
+model GrupoTelegram {
+  chatId           String @id @map("chat_id")
+  areaOCentroCosto String @map("area_o_centro_costo")
+  creadoEn         DateTime @default(now()) @map("creado_en")
+
+  @@map("grupos_telegram")
 }
