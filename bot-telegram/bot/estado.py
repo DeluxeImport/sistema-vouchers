@@ -1,6 +1,6 @@
 """
 Estado en memoria de las subidas pendientes: una foto ya llego y esta
-avanzando por los pasos -- elegir categoria, confirmar/escribir la fecha,
+avanzando por los pasos -- elegir tipo y categoria, confirmar/escribir la fecha,
 decidir si deja una nota -- antes de subirse a Sistema Vouchers.
 
 Vive solo mientras el proceso del bot esta corriendo -- si se reinicia, las
@@ -24,6 +24,8 @@ class Pendiente:
     mensaje_id: int
     categorias_permitidas: list[str]
     categoria: Optional[str] = None
+    # None = voucher; "NOTA" / "FACTURA" / "BOLETA" = documento.
+    tipo_documento: Optional[str] = None
     fecha: Optional[str] = None  # YYYY-MM-DD, o None si se omite
     descripcion: Optional[str] = None
     imagen: Optional[bytes] = None  # bytes de la foto ya descargada (se reutiliza, no se pide dos veces)

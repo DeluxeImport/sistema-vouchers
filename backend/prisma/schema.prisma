@@ -42,7 +42,10 @@ model Usuario {
 model Voucher {
   voucherId     String    @id @map("voucher_id")
   usuarioId     String    @map("usuario_id")
+  // Categoria contable (o una categoria anterior en vouchers historicos).
   categoria     String
+  // null = voucher (sustento de pago). NOTA / FACTURA / BOLETA = documento.
+  tipoDocumento String?   @map("tipo_documento")
   nombreArchivo String    @map("nombre_archivo")
   rutaArchivo   String    @map("ruta_archivo") @db.VarChar(500)
   tamanoBytes   Int?      @map("tamano_bytes")
@@ -59,6 +62,7 @@ model Voucher {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@index([categoria])
+  @@index([tipoDocumento])
   @@index([usuarioId])
   @@index([eliminadoEn])
   @@map("vouchers")

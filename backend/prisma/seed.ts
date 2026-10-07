@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { CATEGORIAS } from "../src/config.js";
+import { CATEGORIAS, CLAVES_CONTADOR } from "../src/config.js";
 
 const prisma = new PrismaClient();
 
@@ -12,8 +12,8 @@ const USUARIOS = [
 ];
 
 async function main() {
-  // Contadores secuenciales por categoria
-  for (const categoria of CATEGORIAS) {
+  // Contadores secuenciales: uno por categoria principal y uno por tipo de documento.
+  for (const categoria of CLAVES_CONTADOR) {
     await prisma.contador.upsert({
       where: { categoria },
       update: {},

@@ -55,8 +55,11 @@ async def subir_voucher(
     nombre_archivo: str,
     descripcion: Optional[str] = None,
     fecha: Optional[str] = None,
+    tipo_documento: Optional[str] = None,
 ) -> dict:
     datos = {"telegramUserId": telegram_user_id, "categoria": categoria, "chatId": chat_id}
+    if tipo_documento:
+        datos["tipoDocumento"] = tipo_documento
     if descripcion:
         datos["descripcion"] = descripcion
     if fecha:

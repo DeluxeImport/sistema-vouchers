@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { api, mensajeError } from "../api/client";
 import { useAuth } from "../store/auth";
 
+// Oculta de momento la tarjeta "Bot de Telegram" (vincular/desvincular) mientras
+// el bot no funciona correctamente. La logica y los endpoints siguen intactos:
+// para volver a mostrarla basta con poner true.
+const MOSTRAR_BOT_TELEGRAM = false;
+
 export default function PerfilPage() {
   const usuario = useAuth((s) => s.usuario);
   const totpActivo = useAuth((s) => s.totpActivo);
@@ -106,7 +111,8 @@ export default function PerfilPage() {
         </div>
       </div>
 
-      {/* Vinculacion con el bot de Telegram */}
+      {/* Vinculacion con el bot de Telegram (oculta por MOSTRAR_BOT_TELEGRAM) */}
+      {MOSTRAR_BOT_TELEGRAM && (
       <div className="card">
         <h2 className="font-semibold mb-3">Bot de Telegram</h2>
         {errTelegram && <div className="mb-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">{errTelegram}</div>}
@@ -144,6 +150,7 @@ export default function PerfilPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Cambiar contrasena */}
       <div className="card">

@@ -5,7 +5,20 @@ import fsPromesas from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { config, CATEGORIAS, CATEGORIAS_SUBIBLES, CARPETAS, type Categoria } from "../config.js";
+import {
+  config,
+  CATEGORIAS,
+  CATEGORIAS_LEGADO,
+  GRUPOS,
+  TIPOS_DOCUMENTO,
+  carpetaDe,
+  errorCombinacion,
+  esCategoriaContable,
+  esTipoDocumento,
+  type Categoria,
+  type CategoriaContable,
+  type TipoDocumento,
+} from "../config.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { procesarYGuardar, rutaAbsolutaVoucher, borrarArchivoVoucher, DIAS_PAPELERA } from "../services/voucherService.js";
 import { audit, getIp } from "../utils/audit.js";
@@ -13,11 +26,22 @@ import { audit, getIp } from "../utils/audit.js";
 const router = Router();
 
 // Filtro base segun el usuario: el admin ve todo; el usuario normal solo
-// ve SUS vouchers y unicamente de las categorias que tiene permitidas.
+// ve SUS vouchers, de las categorias que tiene permitidas y, si es un
+// documento, solo de los tipos de documento que tiene permitidos.
 function scopeBase(req: any): any {
   const u = req.usuario!;
   if (u.esAdmin) return {};
-  return { usuarioId: u.sub, categoria: { in: u.categorias } };
+  return {
+    usuarioId: u.sub,
+    categoria: { in: u.categorias },
+    OR: [{ tipoDocumento: null }, { tipoDocumento: { in: u.categorias } }],
+  };
+}
+
+// Lee y normaliza el tipo de documento enviado ("" / ausente = voucher).
+function leerTipoDocumento(valor: unknown): string | null {
+  const t = String(valor ?? "").trim().toUpperCase();
+  return t === "" || t === "VOUCHER" ? null : t;
 }
 
 // Categorias visibles para el usuario (admin = todas).
@@ -42,12 +66,17 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
   if (!req.usuario!.puedeSubir) {
     return res.status(403).json({ error: "No tienes permiso para subir" });
   }
-  const categoria = String(req.body.categoria ?? "").toUpperCase() as Categoria;
-  if (!CATEGORIAS_SUBIBLES.includes(categoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
-    return res.status(400).json({ error: "Categoria invalida" });
-  }
-  if (!req.usuario!.esAdmin && !req.usuario!.categorias.includes(categoria)) {
-    return res.status(403).json({ error: "No tienes permiso para esta categoria" });
+  const categoria = String(req.body.categoria ?? "").toUpperCase();
+  const tipoDocumento = leerTipoDocumento(req.body.tipoDocumento);
+  const errorDatos = errorCombinacion(categoria, tipoDocumento);
+  if (errorDatos) return res.status(400).json({ error: errorDatos });
+  if (!req.usuario!.esAdmin) {
+    if (!req.usuario!.categorias.includes(categoria as Categoria)) {
+      return res.status(403).json({ error: "No tienes permiso para esta categoria" });
+    }
+    if (tipoDocumento && !req.usuario!.categorias.includes(tipoDocumento as Categoria)) {
+      return res.status(403).json({ error: "No tienes permiso para este tipo de documento" });
+    }
   }
   const archivos = (req.files as Express.Multer.File[]) ?? [];
   if (archivos.length === 0) return res.status(400).json({ error: "Debe subir al menos un archivo" });
@@ -71,7 +100,8 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
     try {
       const r = await procesarYGuardar(
         { buffer: a.buffer, mimetype: a.mimetype, size: a.size },
-        categoria,
+        categoria as CategoriaContable,
+        tipoDocumento as TipoDocumento | null,
         usuarioId,
         ip,
         { fechaVoucher: isNaN(fechaVoucher?.getTime() ?? NaN) ? null : fechaVoucher, descripcion: m.descripcion }
@@ -81,13 +111,17 @@ router.post("/upload", requireAuth, upload.array("imagenes", 5), async (req, res
       return res.status(400).json({ error: e instanceof Error ? e.message : "Archivo invalido" });
     }
   }
-  await audit(req, "UPLOAD", usuarioId, `${resultados.length} voucher(s) ${categoria}: ${resultados.map((r) => r.voucherId).join(", ")}`);
+  await audit(req, "UPLOAD", usuarioId, `${resultados.length} ${tipoDocumento ? `documento(s) ${tipoDocumento}` : "voucher(s)"} ${categoria}:${resultados.map((r) => r.voucherId).join(", ")}`);
   return res.status(201).json({ vouchers: resultados });
 });
 
 // GET /api/vouchers  (filtros + paginacion)
 const listQuerySchema = z.object({
   categoria: z.string().optional(),
+  // Id de categoria principal (ej. PERSONAL) o LEGADO para las categorias anteriores.
+  grupo: z.string().optional(),
+  // VOUCHER, DOCUMENTO o un tipo concreto (NOTA, FACTURA, BOLETA).
+  tipo: z.string().optional(),
   usuario_id: z.string().optional(),
   fecha_desde: z.string().optional(),
   fecha_hasta: z.string().optional(),
@@ -112,8 +146,25 @@ router.get("/", requireAuth, async (req, res) => {
   }
   if (q.usuario_id && req.usuario!.esAdmin) where.usuarioId = q.usuario_id;
 
-  // Combinamos los grupos OR (busqueda y fecha) con AND para que no se pisen.
+  // Combinamos los grupos OR (permisos, busqueda y fecha) con AND para que no se pisen.
   const and: any[] = [];
+
+  // Filtro por categoria principal: se traduce a sus subcategorias, siempre
+  // dentro de las categorias visibles para el usuario.
+  if (q.grupo) {
+    const id = q.grupo.toUpperCase();
+    const delGrupo: readonly string[] =
+      id === "LEGADO" ? [...CATEGORIAS_LEGADO, ...TIPOS_DOCUMENTO] : GRUPOS.find((g) => g.id === id)?.categorias ?? [];
+    const visibles = new Set<string>(categoriasVisibles(req));
+    and.push({ categoria: { in: delGrupo.filter((c) => visibles.has(c)) } });
+  }
+
+  if (q.tipo) {
+    const t = q.tipo.toUpperCase();
+    if (t === "VOUCHER") and.push({ tipoDocumento: null });
+    else if (t === "DOCUMENTO") and.push({ tipoDocumento: { not: null } });
+    else if (esTipoDocumento(t)) and.push({ tipoDocumento: t });
+  }
 
   // Busca por ID (en mayusculas) o dentro de la nota/descripcion.
   if (q.voucher_id) {
@@ -167,8 +218,14 @@ router.get("/stats", requireAuth, async (req, res) => {
   const base = { ...scopeBase(req), eliminadoEn: null };
   const total = await prisma.voucher.count({ where: base });
   const porCategoria: Record<string, number> = {};
-  for (const cat of categoriasVisibles(req)) {
-    porCategoria[cat] = await prisma.voucher.count({ where: { ...base, categoria: cat } });
+  for (const cat of categoriasVisibles(req)) porCategoria[cat] = 0;
+  // porTipo: VOUCHER (sin tipo) y cada tipo de documento.
+  const porTipo: Record<string, number> = { VOUCHER: 0, NOTA: 0, FACTURA: 0, BOLETA: 0 };
+  const filas = await prisma.voucher.groupBy({ by: ["categoria", "tipoDocumento"], where: base, _count: { _all: true } });
+  for (const f of filas) {
+    porCategoria[f.categoria] = (porCategoria[f.categoria] ?? 0) + f._count._all;
+    const clave = f.tipoDocumento ?? "VOUCHER";
+    porTipo[clave] = (porTipo[clave] ?? 0) + f._count._all;
   }
   const recientes = await prisma.voucher.findMany({
     where: base,
@@ -176,18 +233,26 @@ router.get("/stats", requireAuth, async (req, res) => {
     take: 10,
     include: { usuario: { select: { id: true, nombre: true, username: true } } },
   });
-  return res.json({ total, porCategoria, recientes });
+  return res.json({ total, porCategoria, porTipo, recientes });
 });
 
 // GET /api/vouchers/stats/by-user  (solo admin)
 router.get("/stats/by-user", requireAuth, requireAdmin, async (_req, res) => {
   const usuarios = await prisma.usuario.findMany({ select: { id: true, nombre: true, username: true } });
+  const filas = await prisma.voucher.groupBy({
+    by: ["usuarioId", "categoria"],
+    where: { eliminadoEn: null },
+    _count: { _all: true },
+  });
   const resultado = [];
   for (const u of usuarios) {
-    const total = await prisma.voucher.count({ where: { usuarioId: u.id, eliminadoEn: null } });
     const porCategoria: Record<string, number> = {};
-    for (const cat of CATEGORIAS) {
-      porCategoria[cat] = await prisma.voucher.count({ where: { usuarioId: u.id, categoria: cat, eliminadoEn: null } });
+    for (const cat of CATEGORIAS) porCategoria[cat] = 0;
+    let total = 0;
+    for (const f of filas) {
+      if (f.usuarioId !== u.id) continue;
+      porCategoria[f.categoria] = (porCategoria[f.categoria] ?? 0) + f._count._all;
+      total += f._count._all;
     }
     const ultimo = await prisma.voucher.findFirst({
       where: { usuarioId: u.id, eliminadoEn: null },
@@ -261,6 +326,8 @@ const editSchema = z.object({
   fecha: z.string().optional(),
   descripcion: z.string().optional(),
   categoria: z.string().optional(),
+  // "" = voucher; NOTA / FACTURA / BOLETA = documento.
+  tipoDocumento: z.string().optional(),
 });
 router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
   const voucher = await prisma.voucher.findUnique({ where: { voucherId: req.params.id.toUpperCase() } });
@@ -269,12 +336,18 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
 
   const parse = editSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Datos invalidos" });
-  const { fecha, descripcion, categoria } = parse.data;
-  if (fecha === undefined && descripcion === undefined && categoria === undefined) {
+  const { fecha, descripcion, categoria, tipoDocumento } = parse.data;
+  if (fecha === undefined && descripcion === undefined && categoria === undefined && tipoDocumento === undefined) {
     return res.status(400).json({ error: "Nada que actualizar" });
   }
 
-  const data: { fechaVoucher?: Date | null; descripcion?: string | null; categoria?: Categoria; rutaArchivo?: string } = {};
+  const data: {
+    fechaVoucher?: Date | null;
+    descripcion?: string | null;
+    categoria?: string;
+    tipoDocumento?: string | null;
+    rutaArchivo?: string;
+  } = {};
   if (fecha !== undefined) {
     if (fecha === "") {
       data.fechaVoucher = null;
@@ -288,24 +361,27 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
   if (descripcion !== undefined) {
     data.descripcion = descripcion.trim() || null;
   }
-  if (categoria !== undefined) {
-    const nuevaCategoria = categoria.toUpperCase() as Categoria;
-    if (!CATEGORIAS_SUBIBLES.includes(nuevaCategoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
-      return res.status(400).json({ error: "Categoria invalida" });
+  const nuevaCategoria = categoria !== undefined ? categoria.toUpperCase() : voucher.categoria;
+  const nuevoTipo = tipoDocumento !== undefined ? leerTipoDocumento(tipoDocumento) : voucher.tipoDocumento;
+  if (nuevaCategoria !== voucher.categoria || nuevoTipo !== voucher.tipoDocumento) {
+    // Una categoria anterior solo se conserva si no se toca (vouchers historicos);
+    // cualquier cambio debe llevar a una combinacion valida de la estructura nueva.
+    const errorDatos = esCategoriaContable(nuevaCategoria)
+      ? errorCombinacion(nuevaCategoria, nuevoTipo)
+      : "Elige una categoria de la estructura nueva";
+    if (errorDatos) return res.status(400).json({ error: errorDatos });
+    const nuevaRutaRelativa = path.join(carpetaDe(nuevaCategoria, nuevoTipo), voucher.nombreArchivo).replace(/\\/g, "/");
+    const origenAbs = rutaAbsolutaVoucher(voucher.rutaArchivo);
+    const destinoAbs = rutaAbsolutaVoucher(nuevaRutaRelativa);
+    await fsPromesas.mkdir(path.dirname(destinoAbs), { recursive: true });
+    try {
+      await fsPromesas.rename(origenAbs, destinoAbs);
+    } catch {
+      /* el archivo original ya no existe: igual movemos el registro */
     }
-    if (nuevaCategoria !== voucher.categoria) {
-      const nuevaRutaRelativa = path.join(CARPETAS[nuevaCategoria], voucher.nombreArchivo).replace(/\\/g, "/");
-      const origenAbs = rutaAbsolutaVoucher(voucher.rutaArchivo);
-      const destinoAbs = rutaAbsolutaVoucher(nuevaRutaRelativa);
-      await fsPromesas.mkdir(path.dirname(destinoAbs), { recursive: true });
-      try {
-        await fsPromesas.rename(origenAbs, destinoAbs);
-      } catch {
-        /* el archivo original ya no existe: igual movemos el registro */
-      }
-      data.categoria = nuevaCategoria;
-      data.rutaArchivo = nuevaRutaRelativa;
-    }
+    data.categoria = nuevaCategoria;
+    data.tipoDocumento = nuevoTipo;
+    data.rutaArchivo = nuevaRutaRelativa;
   }
 
   const actualizado = await prisma.voucher.update({ where: { voucherId: voucher.voucherId }, data });
@@ -343,10 +419,14 @@ router.delete("/:id/permanente", requireAuth, async (req, res) => {
 });
 
 // Verifica que el usuario pueda acceder a un voucher concreto.
-function puedeAcceder(req: any, voucher: { usuarioId: string; categoria: string }): boolean {
+function puedeAcceder(req: any, voucher: { usuarioId: string; categoria: string; tipoDocumento: string | null }): boolean {
   const u = req.usuario!;
   if (u.esAdmin) return true;
-  return voucher.usuarioId === u.sub && u.categorias.includes(voucher.categoria as Categoria);
+  return (
+    voucher.usuarioId === u.sub &&
+    u.categorias.includes(voucher.categoria as Categoria) &&
+    (!voucher.tipoDocumento || u.categorias.includes(voucher.tipoDocumento as Categoria))
+  );
 }
 
 // GET /api/vouchers/:id

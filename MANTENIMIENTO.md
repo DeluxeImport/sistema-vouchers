@@ -19,6 +19,9 @@ en `/www/wwwroot/sistema-vouchers`.
 
    ```bash
    cd /www/wwwroot/sistema-vouchers
+   # Si el cambio trae un script nuevo en backend/sql/ (ej.
+   # 2026-10_categorias_contables.sql), ejecútalo antes en la base TiDB,
+   # con un respaldo previo.
    git pull
    npm run install:all
    npm run build
@@ -115,21 +118,30 @@ bruta) el 2026-07-25, limpiada el 2026-07-27. Reglas fijas desde entonces:
 
 ---
 
-## 6. Nota para el que agregue una categoría de documento nueva
+## 6. Categorías: dónde se definen y cómo agregar una
 
-Las categorías con tarjeta dedicada de "solo PDF" (Factura, Boleta) están
-declaradas en **dos lugares que no se sincronizan solos**:
+Vouchers (sustento de pago) y documentos (nota / factura / boleta, sustento
+fiscal) comparten la misma estructura contable de categorías principales y
+subcategorías. Un documento guarda además su tipo en `tipo_documento`
+(`NULL` = voucher).
 
-- Backend: `CATEGORIAS_DOCUMENTO` en `backend/src/config.ts` (qué
-  categorías existen).
-- Frontend: `CATEGORIAS_PDF` en `frontend/src/pages/SubirVoucherPage.tsx`
-  (cuáles de esas categorías tienen la tarjeta de subida de PDF sin foto).
+La estructura está declarada en **tres lugares que no se sincronizan solos**:
 
-Si se agrega una categoría nueva pensada para recibir PDF, hay que
-añadirla en **ambos** archivos. La tarjeta genérica "Subir Documento" solo
-acepta imágenes (su dropzone no incluye `application/pdf`), así que si se
-olvida el segundo paso, esa categoría se queda sin ninguna forma de subir
-PDF desde la interfaz.
+- Backend: `GRUPOS` en `backend/src/config.ts` (códigos válidos, prefijo
+  del voucherId por categoría principal, carpeta de almacenamiento).
+- Frontend: `GRUPOS` y `LABEL_CATEGORIA` en `frontend/src/lib/categorias.ts`
+  (nombres visibles, colores y subgrupos como "Servicios Básicos de Tiendas").
+- Bot: `GRUPOS` y `LABELS` en `bot-telegram/bot/categorias.py`.
+
+Para agregar una subcategoría, añade el mismo código en los tres archivos.
+Para una categoría principal nueva, elige además un prefijo que no exista
+(el seed crea su contador al desplegar). Los usuarios que no son admin no la
+ven hasta que el admin la marque en sus permisos.
+
+Las categorías de la estructura anterior (Proveedores, Luz, Alquiler...)
+siguen en `CATEGORIAS_LEGADO` solo para los vouchers históricos: no se pueden
+usar para subir, y el admin puede reclasificar cada voucher desde la galería
+(botón **Editar**).
 
 ---
 

@@ -4,18 +4,24 @@ import { api, mensajeError } from "../api/client";
 import AuthImage from "../components/AuthImage";
 import { useAuth } from "../store/auth";
 import {
-  CATEGORIAS_LEGADO,
-  CATEGORIAS_DOCUMENTO,
-  GRUPOS_VOUCHER,
-  CATEGORIAS_SUELTAS,
-  COLOR_CATEGORIA,
-  LABEL_CATEGORIA,
-  type Categoria,
+  GRUPOS,
+  SOLO_VOUCHER,
+  TIPOS_DOCUMENTO,
+  colorCategoria,
+  colorTipo,
+  esLegado,
+  esTipoDocumento,
+  etiquetaCategoria,
+  etiquetaCompleta,
+  etiquetaRegistro,
+  gruposPermitidos,
+  type CategoriaContable,
 } from "../lib/categorias";
 
 interface VoucherItem {
   voucherId: string;
-  categoria: Categoria;
+  categoria: string;
+  tipoDocumento?: string | null;
   formato?: string | null;
   nombreArchivo?: string;
   fechaCarga: string;
@@ -26,6 +32,28 @@ interface VoucherItem {
 
 function esPdf(v: VoucherItem): boolean {
   return v.formato?.toLowerCase() === "pdf";
+}
+
+// Etiquetas de un registro: tipo (Voucher / Nota / Factura / Boleta) + categoria.
+function Etiquetas({ v }: { v: VoucherItem }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {esTipoDocumento(v.tipoDocumento) ? (
+        <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: colorTipo(v.tipoDocumento) }}>
+          {etiquetaCategoria(v.tipoDocumento)}
+        </span>
+      ) : (
+        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600">Voucher</span>
+      )}
+      <span
+        className="text-[10px] px-2 py-0.5 rounded text-white max-w-full truncate"
+        style={{ background: colorCategoria(v.categoria) }}
+        title={etiquetaRegistro(v.categoria, v.tipoDocumento)}
+      >
+        {etiquetaRegistro(v.categoria, v.tipoDocumento)}
+      </span>
+    </div>
+  );
 }
 
 function PdfPreview({ voucherId }: { voucherId: string }) {
@@ -73,6 +101,8 @@ interface Usuario { id: string; nombre: string }
 
 const FILTROS_INICIALES = {
   categoria: "TODAS" as string,
+  grupo: "",
+  tipo: "",
   usuario_id: "",
   fecha_desde: "",
   fecha_hasta: "",
@@ -84,26 +114,31 @@ export default function GaleriaPage() {
   const esAdmin = !!usuario?.esAdmin;
 
   const [searchParams] = useSearchParams();
+  // Filtros que llegan desde los enlaces del menu lateral
+  // (/galeria?tipo=FACTURA, /galeria?grupo=PERSONAL, /galeria?categoria=XXX).
+  const filtrosDeUrl = () => ({
+    categoria: searchParams.get("categoria")?.toUpperCase() || "TODAS",
+    grupo: searchParams.get("grupo")?.toUpperCase() || "",
+    tipo: searchParams.get("tipo")?.toUpperCase() || "",
+  });
+  const hayFiltroUrl = () => ["categoria", "grupo", "tipo"].some((k) => searchParams.get(k));
+
   const [filtros, setFiltros] = useState(() => {
-    const categoriaUrl = searchParams.get("categoria");
-    if (categoriaUrl) return { ...FILTROS_INICIALES, categoria: categoriaUrl.toUpperCase() };
+    if (hayFiltroUrl()) return { ...FILTROS_INICIALES, ...filtrosDeUrl() };
     const guardado = sessionStorage.getItem("filtrosGaleria");
-    return guardado ? JSON.parse(guardado) : FILTROS_INICIALES;
+    return guardado ? { ...FILTROS_INICIALES, ...JSON.parse(guardado) } : FILTROS_INICIALES;
   });
 
-  // Los enlaces del menu lateral (ej. "Galería > Compras > Proveedores") navegan
-  // a /galeria?categoria=XXX (o a /galeria sin parametro para "Todas");
-  // sincronizamos el filtro cada vez que cambian, salvo en el primer render
-  // (ahi el useState de arriba ya decidio entre la URL y lo guardado en sesion).
+  // Sincronizamos el filtro cada vez que cambia la URL, salvo en el primer
+  // render (ahi el useState de arriba ya decidio entre la URL y lo guardado en sesion).
   const primerRender = useRef(true);
   useEffect(() => {
     if (primerRender.current) {
       primerRender.current = false;
       return;
     }
-    const categoriaUrl = searchParams.get("categoria");
     setPage(1);
-    setFiltros((f: any) => ({ ...f, categoria: categoriaUrl ? categoriaUrl.toUpperCase() : "TODAS" }));
+    setFiltros((f: any) => ({ ...f, ...filtrosDeUrl() }));
   }, [searchParams]);
   const [items, setItems] = useState<VoucherItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -115,7 +150,8 @@ export default function GaleriaPage() {
   const [editando, setEditando] = useState(false);
   const [fechaEdit, setFechaEdit] = useState("");
   const [descripcionEdit, setDescripcionEdit] = useState("");
-  const [categoriaEdit, setCategoriaEdit] = useState<Categoria | "">("");
+  const [categoriaEdit, setCategoriaEdit] = useState("");
+  const [tipoEdit, setTipoEdit] = useState("");
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [errorEdit, setErrorEdit] = useState("");
 
@@ -127,6 +163,8 @@ export default function GaleriaPage() {
     sessionStorage.setItem("filtrosGaleria", JSON.stringify(filtros));
     const params: any = { page, limit: 20 };
     if (filtros.categoria && filtros.categoria !== "TODAS") params.categoria = filtros.categoria;
+    if (filtros.grupo) params.grupo = filtros.grupo;
+    if (filtros.tipo) params.tipo = filtros.tipo;
     if (filtros.usuario_id) params.usuario_id = filtros.usuario_id;
     if (filtros.fecha_desde) params.fecha_desde = filtros.fecha_desde;
     if (filtros.fecha_hasta) params.fecha_hasta = filtros.fecha_hasta;
@@ -165,6 +203,7 @@ export default function GaleriaPage() {
     setFechaEdit(fechaInputValue(seleccion.fechaVoucher));
     setDescripcionEdit(seleccion.descripcion ?? "");
     setCategoriaEdit(seleccion.categoria);
+    setTipoEdit(seleccion.tipoDocumento ?? "");
     setErrorEdit("");
     setEditando(true);
   };
@@ -174,15 +213,26 @@ export default function GaleriaPage() {
     setGuardandoEdit(true);
     setErrorEdit("");
     try {
-      const payload: { fecha: string; descripcion: string; categoria?: Categoria } = {
+      const payload: { fecha: string; descripcion: string; categoria?: string; tipoDocumento?: string } = {
         fecha: fechaEdit,
         descripcion: descripcionEdit,
       };
-      // Solo se envia si realmente cambio: evita pisar la categoria legado
-      // cuando el admin no tocó el selector (no aparece como opción elegible).
+      // Solo se envian si realmente cambiaron: evita pisar una categoria
+      // anterior cuando el admin no tocó el selector.
       if (categoriaEdit && categoriaEdit !== seleccion.categoria) payload.categoria = categoriaEdit;
+      if (tipoEdit !== (seleccion.tipoDocumento ?? "")) payload.tipoDocumento = tipoEdit;
       const { data } = await api.patch(`/vouchers/${seleccion.voucherId}`, payload);
-      setSeleccion((s) => (s ? { ...s, fechaVoucher: data.fechaVoucher, descripcion: data.descripcion, categoria: data.categoria } : s));
+      setSeleccion((s) =>
+        s
+          ? {
+              ...s,
+              fechaVoucher: data.fechaVoucher,
+              descripcion: data.descripcion,
+              categoria: data.categoria,
+              tipoDocumento: data.tipoDocumento,
+            }
+          : s
+      );
       setEditando(false);
       setRecarga((r) => r + 1);
     } catch (e) {
@@ -200,6 +250,24 @@ export default function GaleriaPage() {
   const limpiar = () => {
     setPage(1);
     setFiltros(FILTROS_INICIALES);
+  };
+
+  // Selector de categoria: "g:ID" = toda una categoria principal, "c:CODIGO" = una subcategoria.
+  const permitidas = new Set(usuario?.categorias ?? []);
+  const gruposVisibles = gruposPermitidos((c) => esAdmin || permitidas.has(c));
+  const tiposVisibles = TIPOS_DOCUMENTO.filter((t) => esAdmin || permitidas.has(t));
+  const valorCategoria = filtros.grupo
+    ? `g:${filtros.grupo}`
+    : filtros.categoria && filtros.categoria !== "TODAS"
+      ? `c:${filtros.categoria}`
+      : "";
+  const cambiarCategoria = (valor: string) => {
+    setPage(1);
+    setFiltros((f: any) => ({
+      ...f,
+      grupo: valor.startsWith("g:") ? valor.slice(2) : "",
+      categoria: valor.startsWith("c:") ? valor.slice(2) : "TODAS",
+    }));
   };
 
   const descargar = async (v: VoucherItem) => {
@@ -220,10 +288,36 @@ export default function GaleriaPage() {
       </div>
 
       {/* Filtros */}
-      <div className="card grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="card grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label className="label">Buscar (ID o nota)</label>
-          <input className="input" placeholder="Ej: CP000 o 'luz'" value={filtros.voucher_id} onChange={(e) => cambiar("voucher_id", e.target.value)} />
+          <input className="input" placeholder="Ej: GA000 o 'luz'" value={filtros.voucher_id} onChange={(e) => cambiar("voucher_id", e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Tipo</label>
+          <select className="input" value={filtros.tipo} onChange={(e) => cambiar("tipo", e.target.value)}>
+            <option value="">Todos</option>
+            <option value="VOUCHER">Vouchers</option>
+            {tiposVisibles.length > 0 && <option value="DOCUMENTO">Documentos (todos)</option>}
+            {tiposVisibles.map((t) => (
+              <option key={t} value={t}>{etiquetaCategoria(t)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Categoría</label>
+          <select className="input" value={valorCategoria} onChange={(e) => cambiarCategoria(e.target.value)}>
+            <option value="">Todas</option>
+            {gruposVisibles.map((g) => (
+              <optgroup key={g.id} label={g.label}>
+                {g.categorias.length > 1 && <option value={`g:${g.id}`}>Todo: {g.label}</option>}
+                {g.categorias.map((c) => (
+                  <option key={c} value={`c:${c}`}>{etiquetaCompleta(c)}</option>
+                ))}
+              </optgroup>
+            ))}
+            <option value="g:LEGADO">Categorías anteriores</option>
+          </select>
         </div>
         {esAdmin && (
           <div>
@@ -256,22 +350,22 @@ export default function GaleriaPage() {
             {esPdf(v) ? (
               <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600">
                 <div className="text-3xl font-bold">PDF</div>
-                <div className="text-xs mt-1 text-red-500">{LABEL_CATEGORIA[v.categoria]} electronica</div>
+                {esTipoDocumento(v.tipoDocumento) && (
+                  <div className="text-xs mt-1 text-red-500">{etiquetaCategoria(v.tipoDocumento)} electrónica</div>
+                )}
               </div>
             ) : (
               <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover" />
             )}
             <div className="p-3">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-semibold" style={{ color: COLOR_CATEGORIA[v.categoria] }}>
+                <span className="font-mono text-xs font-semibold" style={{ color: colorCategoria(v.categoria) }}>
                   {v.voucherId}
                 </span>
-                <div className="flex gap-1">
-                  {esPdf(v) && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600">PDF</span>}
-                  <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
-                    {LABEL_CATEGORIA[v.categoria]}
-                  </span>
-                </div>
+                {esPdf(v) && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600">PDF</span>}
+              </div>
+              <div className="mt-1.5">
+                <Etiquetas v={v} />
               </div>
               <div className="text-sm mt-1">{v.usuario.nombre}</div>
               {v.descripcion && (
@@ -304,10 +398,13 @@ export default function GaleriaPage() {
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <div>
-                <span className="font-mono font-bold" style={{ color: COLOR_CATEGORIA[seleccion.categoria] }}>
+                <span className="font-mono font-bold" style={{ color: colorCategoria(seleccion.categoria) }}>
                   {seleccion.voucherId}
                 </span>
                 <span className="text-sm text-slate-500 ml-3">{seleccion.usuario.nombre}</span>
+                <div className="mt-1">
+                  <Etiquetas v={seleccion} />
+                </div>
               </div>
               <button onClick={cerrarModal} className="text-2xl leading-none text-slate-400">×</button>
             </div>
@@ -330,25 +427,31 @@ export default function GaleriaPage() {
                   <p className="text-xs text-slate-400 mt-1">Léela antes de elegir la categoría: suele indicar a cuál pertenece.</p>
                 </div>
                 <div>
+                  <label className="label text-xs">Tipo</label>
+                  <select className="input" value={tipoEdit} onChange={(e) => setTipoEdit(e.target.value)}>
+                    <option value="">Voucher</option>
+                    {TIPOS_DOCUMENTO.map((t) => (
+                      <option key={t} value={t}>Documento · {etiquetaCategoria(t)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="label text-xs">Categoría</label>
-                  <select className="input" value={categoriaEdit} onChange={(e) => setCategoriaEdit(e.target.value as Categoria)}>
-                    {CATEGORIAS_LEGADO.includes(seleccion.categoria as (typeof CATEGORIAS_LEGADO)[number]) && (
+                  <select className="input" value={categoriaEdit} onChange={(e) => setCategoriaEdit(e.target.value)}>
+                    {esLegado(seleccion.categoria) && (
                       <option value={seleccion.categoria}>
-                        {LABEL_CATEGORIA[seleccion.categoria]} (legado — mueve a una subcategoría)
+                        {etiquetaRegistro(seleccion.categoria, seleccion.tipoDocumento)} (anterior — elige una nueva)
                       </option>
                     )}
-                    {GRUPOS_VOUCHER.map((g) => (
+                    {GRUPOS.map((g) => (
                       <optgroup key={g.id} label={g.label}>
-                        {g.subcategorias.map((c) => (
-                          <option key={c} value={c}>{LABEL_CATEGORIA[c]}</option>
-                        ))}
+                        {g.categorias
+                          .filter((c) => !(tipoEdit && SOLO_VOUCHER.includes(c as CategoriaContable)))
+                          .map((c) => (
+                            <option key={c} value={c}>{etiquetaCompleta(c)}</option>
+                          ))}
                       </optgroup>
                     ))}
-                    <optgroup label="Otras categorías">
-                      {[...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO].map((c) => (
-                        <option key={c} value={c}>{LABEL_CATEGORIA[c]}</option>
-                      ))}
-                    </optgroup>
                   </select>
                 </div>
                 <div>
@@ -392,7 +495,7 @@ export default function GaleriaPage() {
                 )}
                 {esAdmin && !editando && (
                   <button className="btn-ghost text-sm" onClick={empezarEdicion}>
-                    Editar fecha / nota
+                    Editar
                   </button>
                 )}
                 <button

@@ -52,7 +52,9 @@ export default function App() {
 
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<Inicio />} />
-        <Route path="/subir" element={<Permitido cond={usuario?.puedeSubir}><SubirVoucherPage /></Permitido>} />
+        <Route path="/subir" element={<Permitido cond={usuario?.puedeSubir}><SubirVoucherPage key="general" /></Permitido>} />
+        <Route path="/subir/voucher" element={<Permitido cond={usuario?.puedeSubir}><SubirVoucherPage key="voucher" modo="voucher" /></Permitido>} />
+        <Route path="/subir/documento" element={<Permitido cond={usuario?.puedeSubir}><SubirVoucherPage key="documento" modo="documento" /></Permitido>} />
         <Route path="/galeria" element={<Permitido cond={usuario?.puedeVerGaleria}><GaleriaPage /></Permitido>} />
         <Route path="/papelera" element={<Permitido cond={usuario?.puedeVerGaleria}><PapeleraPage /></Permitido>} />
         <Route path="/admin" element={<Permitido cond={usuario?.esAdmin}><AdminPage /></Permitido>} />

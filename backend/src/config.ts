@@ -34,17 +34,97 @@ if (config.nodeEnv === "production") {
   }
 }
 
-// COMPRAS y SERVICIOS ya no se usan para subir vouchers nuevos (se reemplazaron
-// por subcategorias), pero se conservan como categorias validas porque pueden
-// existir vouchers historicos guardados con ellas.
-export const CATEGORIAS_LEGADO = ["COMPRAS", "SERVICIOS"] as const;
+// ============================================================
+// Estructura contable de categorias (propuesta "Estructura de Categorias y
+// Subcategorias para Vouchers - Coral Store"). Se usa igual para vouchers
+// (sustento de pago) y para documentos (nota/factura/boleta = sustento fiscal).
+// Espejo en frontend/src/lib/categorias.ts y bot-telegram/bot/categorias.py:
+// si se agrega o renombra una categoria aqui, hay que reflejarlo alla.
+// ============================================================
 
-// Grupo 1: vouchers (incluye las subcategorias de Compras, Servicios y
-// Servicios Fijos). Grupo 2: documentos (nota, factura, boleta).
-export const CATEGORIAS_VOUCHER = [
+// Cada grupo es una categoria principal. El voucherId usa el prefijo del grupo
+// y un contador propio (clave = id del grupo). RECOMPRAS reutiliza la clave y
+// el prefijo historicos para continuar su numeracion.
+export const GRUPOS = [
+  {
+    id: "PERSONAL",
+    prefijo: "PP",
+    carpeta: "personal",
+    categorias: ["PER_VENTAS", "PER_PRACTICANTES", "PER_LEYES_SOCIALES", "PER_PLANILLA"],
+  },
+  { id: "RECOMPRAS", prefijo: "RE", carpeta: "recompras", categorias: ["RECOMPRAS"] },
+  { id: "COSTO_VENTAS", prefijo: "CV", carpeta: "costo_ventas", categorias: ["CV_MERCADERIA", "CV_FLETES"] },
+  {
+    id: "VENTAS_MARKETING",
+    prefijo: "GV",
+    carpeta: "ventas_marketing",
+    categorias: [
+      "GV_PUBLICIDAD",
+      "GV_BRANDING",
+      "GV_ALQUILER_TIENDAS",
+      "GV_MANT_TIENDAS",
+      "GV_TIENDA_AGUA",
+      "GV_TIENDA_LUZ",
+      "GV_TIENDA_INTERNET",
+      "GV_EMPAQUE",
+      "GV_DELIVERY",
+    ],
+  },
+  {
+    id: "ADMINISTRATIVOS",
+    prefijo: "GA",
+    carpeta: "administrativos",
+    categorias: [
+      "GA_ALQUILER_OFICINA",
+      "GA_SUMINISTROS",
+      "GA_LIMPIEZA",
+      "GA_OFICINA_AGUA",
+      "GA_OFICINA_LUZ",
+      "GA_OFICINA_INTERNET",
+      "GA_HONORARIOS",
+      "GA_SOFTWARE",
+      "GA_SERVIDORES",
+      "GA_EQUIPOS",
+      "GA_ATENCIONES",
+    ],
+  },
+  { id: "IMPUESTOS", prefijo: "IS", carpeta: "impuestos", categorias: ["IMP_IGV", "IMP_RENTA", "IMP_FRACCIONAMIENTO"] },
+  {
+    id: "FINANCIEROS",
+    prefijo: "GF",
+    carpeta: "financieros",
+    categorias: ["FIN_COMISIONES", "FIN_INTERESES", "FIN_AMORTIZACION"],
+  },
+  { id: "INVERSION", prefijo: "IA", carpeta: "inversion", categorias: ["INV_MOBILIARIO", "INV_MEJORAS", "INV_EQUIPOS"] },
+  { id: "PATRIMONIO", prefijo: "FP", carpeta: "patrimonio", categorias: ["PAT_AMORTIZACION", "PAT_SOCIOS"] },
+  { id: "OTROS", prefijo: "OG", carpeta: "otros", categorias: ["OTR_NO_OPERATIVOS", "OTR_TRANSFERENCIAS"] },
+] as const;
+
+export type Grupo = (typeof GRUPOS)[number];
+export type CategoriaContable = Grupo["categorias"][number];
+
+export const CATEGORIAS_CONTABLES: readonly CategoriaContable[] = GRUPOS.flatMap((g) => g.categorias);
+
+// Categorias que solo aplican a vouchers (no se pueden usar en documentos).
+export const SOLO_VOUCHER: readonly CategoriaContable[] = ["OTR_TRANSFERENCIAS"];
+
+// Tipos de documento (sustento fiscal). Tambien funcionan como permiso: un
+// usuario solo puede subir/ver documentos de los tipos que tiene permitidos.
+// Ademas son la categoria de los documentos historicos (antes de que los
+// documentos llevaran categoria contable).
+export const TIPOS_DOCUMENTO = ["NOTA", "FACTURA", "BOLETA"] as const;
+export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
+
+export const PREFIJOS_DOCUMENTO: Record<TipoDocumento, string> = { NOTA: "NT", FACTURA: "FA", BOLETA: "BO" };
+
+// Categorias de la estructura anterior: ya no se usan para subir, pero se
+// conservan como validas porque hay vouchers historicos guardados con ellas
+// (el admin puede reclasificarlos desde la galeria).
+export const CATEGORIAS_LEGADO = [
+  "COMPRAS",
+  "SERVICIOS",
   "COMPRAS_PROVEEDORES",
   "COMPRAS_OFICINA",
-  "RECOMPRAS",
   "SERVICIOS_LUZ",
   "SERVICIOS_AGUA",
   "SERVICIOS_MANTENIMIENTO",
@@ -55,42 +135,41 @@ export const CATEGORIAS_VOUCHER = [
   "SFIJOS_FLETE",
   "ALQUILER",
 ] as const;
-export const CATEGORIAS_DOCUMENTO = ["NOTA", "FACTURA", "BOLETA"] as const;
 
-// Todas las categorias validas (para permisos, filtros y contadores):
-// incluye el legado para no romper vouchers historicos.
-export const CATEGORIAS = [...CATEGORIAS_LEGADO, ...CATEGORIAS_VOUCHER, ...CATEGORIAS_DOCUMENTO] as const;
-export type Categoria = (typeof CATEGORIAS)[number];
+// Todas las categorias validas (permisos, filtros, contadores, datos guardados).
+export const CATEGORIAS = [...CATEGORIAS_CONTABLES, ...TIPOS_DOCUMENTO, ...CATEGORIAS_LEGADO] as const;
+export type Categoria = CategoriaContable | TipoDocumento | (typeof CATEGORIAS_LEGADO)[number];
 
-// Lo que puede elegirse al subir un voucher nuevo (sin el legado).
-export const CATEGORIAS_SUBIBLES = [...CATEGORIAS_VOUCHER, ...CATEGORIAS_DOCUMENTO] as const;
+export function esCategoriaContable(c: string): c is CategoriaContable {
+  return (CATEGORIAS_CONTABLES as readonly string[]).includes(c);
+}
 
-export const PREFIJOS: Record<Categoria, string> = {
-  COMPRAS: "CP",
-  SERVICIOS: "SV",
-  COMPRAS_PROVEEDORES: "CPP",
-  COMPRAS_OFICINA: "CPO",
-  RECOMPRAS: "RE",
-  SERVICIOS_LUZ: "SVL",
-  SERVICIOS_AGUA: "SVA",
-  SERVICIOS_MANTENIMIENTO: "SVM",
-  SERVICIOS_INTERNET: "SVI",
-  SFIJOS_CELULAR: "SFC",
-  SFIJOS_CAMARA: "SFM",
-  SFIJOS_PRESUPUESTO: "SFP",
-  SFIJOS_FLETE: "SFL",
-  ALQUILER: "AL",
-  NOTA: "NT",
-  FACTURA: "FA",
-  BOLETA: "BO",
-};
+export function esTipoDocumento(t: string): t is TipoDocumento {
+  return (TIPOS_DOCUMENTO as readonly string[]).includes(t);
+}
 
-export const CARPETAS: Record<Categoria, string> = {
+export function grupoDe(c: string): Grupo | undefined {
+  return GRUPOS.find((g) => (g.categorias as readonly string[]).includes(c));
+}
+
+// Valida la combinacion categoria + tipo de documento para una subida nueva
+// (o un cambio de categoria). Devuelve el mensaje de error, o null si es valida.
+export function errorCombinacion(categoria: string, tipoDocumento: string | null): string | null {
+  if (!esCategoriaContable(categoria)) return "Categoria invalida";
+  if (tipoDocumento !== null) {
+    if (!esTipoDocumento(tipoDocumento)) return "Tipo de documento invalido";
+    if (SOLO_VOUCHER.includes(categoria)) return "Esa categoria solo se usa en vouchers";
+  }
+  return null;
+}
+
+// Carpetas de las categorias anteriores (para mover archivos historicos que
+// no se reclasifican).
+const CARPETAS_LEGADO: Record<string, string> = {
   COMPRAS: "compras",
   SERVICIOS: "servicios",
   COMPRAS_PROVEEDORES: "compras/proveedores",
   COMPRAS_OFICINA: "compras/oficina",
-  RECOMPRAS: "recompras",
   SERVICIOS_LUZ: "servicios/luz",
   SERVICIOS_AGUA: "servicios/agua",
   SERVICIOS_MANTENIMIENTO: "servicios/mantenimiento",
@@ -104,3 +183,22 @@ export const CARPETAS: Record<Categoria, string> = {
   FACTURA: "factura",
   BOLETA: "boleta",
 };
+
+// Carpeta (relativa a STORAGE_PATH) donde se guarda un archivo:
+//   vouchers/<grupo>/<categoria>  o  documentos/<tipo>/<grupo>/<categoria>
+export function carpetaDe(categoria: string, tipoDocumento: string | null): string {
+  const grupo = grupoDe(categoria);
+  if (!grupo) return CARPETAS_LEGADO[categoria] ?? "otros";
+  const base = tipoDocumento ? `documentos/${tipoDocumento.toLowerCase()}` : "vouchers";
+  return `${base}/${grupo.carpeta}/${categoria.toLowerCase()}`;
+}
+
+// Clave de contador y prefijo del voucherId: documentos por tipo, vouchers por grupo.
+export function numeracionDe(categoria: CategoriaContable, tipoDocumento: TipoDocumento | null): { clave: string; prefijo: string } {
+  if (tipoDocumento) return { clave: tipoDocumento, prefijo: PREFIJOS_DOCUMENTO[tipoDocumento] };
+  const grupo = grupoDe(categoria)!;
+  return { clave: grupo.id, prefijo: grupo.prefijo };
+}
+
+// Claves de contador que el seed debe asegurar.
+export const CLAVES_CONTADOR: readonly string[] = [...GRUPOS.map((g) => g.id), ...TIPOS_DOCUMENTO];

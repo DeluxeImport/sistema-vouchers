@@ -8,10 +8,36 @@ from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from . import api_client, config, estado, extraccion
-from .categorias import etiqueta
-from .teclados import teclado_categorias, teclado_fecha_detectada, teclado_si_no, teclado_subcategorias
+from .categorias import etiqueta, grupos_permitidos, tipos_permitidos
+from .teclados import (
+    teclado_categorias,
+    teclado_fecha_detectada,
+    teclado_si_no,
+    teclado_subcategorias,
+    teclado_tipos,
+)
 
 log = logging.getLogger(__name__)
+
+PREGUNTA_TIPO = "¿Que estas subiendo?"
+PREGUNTA_CATEGORIA = "¿A que categoria corresponde este comprobante?"
+
+
+def _primer_paso(sesion_id: str, permitidas: list[str]) -> tuple[str, object]:
+    """Si la persona puede subir documentos, primero se pregunta el tipo
+    (voucher / nota / factura / boleta); si no, se va directo a la categoria."""
+    if tipos_permitidos(permitidas):
+        return PREGUNTA_TIPO, teclado_tipos(sesion_id, permitidas)
+    return PREGUNTA_CATEGORIA, teclado_categorias(sesion_id, permitidas)
+
+
+def _teclado_categorias_de(sesion_id: str, pendiente) -> object:
+    return teclado_categorias(
+        sesion_id,
+        pendiente.categorias_permitidas,
+        solo_documento=pendiente.tipo_documento is not None,
+        con_volver=bool(tipos_permitidos(pendiente.categorias_permitidas)),
+    )
 
 
 def _fmt_fecha(fecha_iso: str) -> str:
@@ -69,7 +95,7 @@ async def foto_recibida(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     permitidas = usuario.get("categorias", [])
-    if not permitidas:
+    if not grupos_permitidos(permitidas):
         await mensaje.reply_text("No tienes ninguna categoria habilitada para subir. Contacta al administrador.")
         return
 
@@ -81,11 +107,8 @@ async def foto_recibida(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         mensaje_id=mensaje.message_id,
         categorias_permitidas=permitidas,
     )
-    await mensaje.reply_text(
-        "¿A que categoria corresponde este comprobante?",
-        reply_to_message_id=mensaje.message_id,
-        reply_markup=teclado_categorias(sesion_id, permitidas),
-    )
+    pregunta, teclado = _primer_paso(sesion_id, permitidas)
+    await mensaje.reply_text(pregunta, reply_to_message_id=mensaje.message_id, reply_markup=teclado)
 
 
 async def _verificar_autorizado(update: Update, pendiente: "estado.Pendiente") -> bool:
@@ -148,9 +171,11 @@ async def _finalizar_subida(context: ContextTypes.DEFAULT_TYPE, sesion_id: str, 
             nombre_archivo=f"{pendiente.file_id}.jpg",
             descripcion=pendiente.descripcion,
             fecha=pendiente.fecha,
+            tipo_documento=pendiente.tipo_documento,
         )
         voucher_id = resultado.get("voucher", {}).get("voucherId", "?")
-        partes = [f"Listo: {voucher_id} ({etiqueta(pendiente.categoria)})"]
+        tipo = etiqueta(pendiente.tipo_documento) if pendiente.tipo_documento else "Voucher"
+        partes = [f"Listo: {voucher_id} ({tipo} - {etiqueta(pendiente.categoria)})"]
         if pendiente.fecha:
             partes.append(f"Fecha: {_fmt_fecha(pendiente.fecha)}")
         if pendiente.descripcion:
@@ -180,16 +205,29 @@ async def boton_pulsado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await query.answer()
 
+    if accion == "inicio":
+        pendiente.tipo_documento = None
+        pregunta, teclado = _primer_paso(sesion_id, pendiente.categorias_permitidas)
+        await query.edit_message_text(pregunta, reply_markup=teclado)
+        return
+
+    if accion == "tipo":
+        pendiente.tipo_documento = None if valor == "VOUCHER" else valor
+        await query.edit_message_text(PREGUNTA_CATEGORIA, reply_markup=_teclado_categorias_de(sesion_id, pendiente))
+        return
+
     if accion == "volver":
-        await query.edit_message_text(
-            "¿A que categoria corresponde este comprobante?",
-            reply_markup=teclado_categorias(sesion_id, pendiente.categorias_permitidas),
-        )
+        await query.edit_message_text(PREGUNTA_CATEGORIA, reply_markup=_teclado_categorias_de(sesion_id, pendiente))
         return
 
     if accion == "grp":
         await query.edit_message_reply_markup(
-            reply_markup=teclado_subcategorias(sesion_id, valor, pendiente.categorias_permitidas)
+            reply_markup=teclado_subcategorias(
+                sesion_id,
+                valor,
+                pendiente.categorias_permitidas,
+                solo_documento=pendiente.tipo_documento is not None,
+            )
         )
         return
 

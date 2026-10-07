@@ -2,17 +2,19 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import sharp from "sharp";
 import { prisma } from "../db.js";
-import { config, PREFIJOS, CARPETAS, type Categoria } from "../config.js";
+import { config, carpetaDe, numeracionDe, type CategoriaContable, type TipoDocumento } from "../config.js";
 
-// Generacion atomica del siguiente ID secuencial por categoria.
-// El contador nunca se reinicia ni se reutiliza.
-export async function generarVoucherId(categoria: Categoria): Promise<string> {
-  const contador = await prisma.contador.update({
-    where: { categoria },
-    data: { ultimoNumero: { increment: 1 } },
+// Generacion atomica del siguiente ID secuencial: vouchers por categoria
+// principal, documentos por tipo. El contador nunca se reinicia ni se reutiliza.
+export async function generarVoucherId(categoria: CategoriaContable, tipoDocumento: TipoDocumento | null): Promise<string> {
+  const { clave, prefijo } = numeracionDe(categoria, tipoDocumento);
+  const contador = await prisma.contador.upsert({
+    where: { categoria: clave },
+    update: { ultimoNumero: { increment: 1 } },
+    create: { categoria: clave, ultimoNumero: 1 },
   });
   const numero = String(contador.ultimoNumero).padStart(5, "0");
-  return `${PREFIJOS[categoria]}${numero}`;
+  return `${prefijo}${numero}`;
 }
 
 function fechaYYYYMMDD(d = new Date()): string {
@@ -77,7 +79,8 @@ export interface MetadatosVoucher {
 export interface ResultadoCarga {
   voucherId: string;
   usuarioId: string;
-  categoria: Categoria;
+  categoria: string;
+  tipoDocumento: string | null;
   nombreArchivo: string;
   rutaArchivo: string;
   tamanoBytes: number;
@@ -91,15 +94,17 @@ export interface ResultadoCarga {
 // y registra la metadata en BD.
 export async function procesarYGuardar(
   archivo: ArchivoSubido,
-  categoria: Categoria,
+  categoria: CategoriaContable,
+  tipoDocumento: TipoDocumento | null,
   usuarioId: string,
   ip: string,
   meta: MetadatosVoucher = {}
 ): Promise<ResultadoCarga> {
-  const voucherId = await generarVoucherId(categoria);
+  // Se valida el archivo antes de consumir un numero del contador.
   const preparado = await prepararArchivoParaGuardar(archivo);
+  const voucherId = await generarVoucherId(categoria, tipoDocumento);
   const ext = preparado.ext;
-  const carpeta = CARPETAS[categoria];
+  const carpeta = carpetaDe(categoria, tipoDocumento);
   const dir = path.resolve(config.storagePath, carpeta);
   await fs.mkdir(dir, { recursive: true });
 
@@ -116,6 +121,7 @@ export async function procesarYGuardar(
       voucherId,
       usuarioId,
       categoria,
+      tipoDocumento,
       nombreArchivo,
       rutaArchivo: rutaRelativa,
       tamanoBytes: buffer.length,
@@ -129,7 +135,8 @@ export async function procesarYGuardar(
   return {
     voucherId: voucher.voucherId,
     usuarioId: voucher.usuarioId,
-    categoria: voucher.categoria as Categoria,
+    categoria: voucher.categoria,
+    tipoDocumento: voucher.tipoDocumento,
     nombreArchivo: voucher.nombreArchivo,
     rutaArchivo: voucher.rutaArchivo,
     tamanoBytes: voucher.tamanoBytes ?? buffer.length,

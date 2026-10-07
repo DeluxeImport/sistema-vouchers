@@ -41,6 +41,7 @@ CREATE TABLE `vouchers`.`vouchers` (
     `voucher_id` VARCHAR(191) NOT NULL,
     `usuario_id` VARCHAR(191) NOT NULL,
     `categoria` VARCHAR(191) NOT NULL,
+    `tipo_documento` VARCHAR(191) NULL,
     `nombre_archivo` VARCHAR(191) NOT NULL,
     `ruta_archivo` VARCHAR(500) NOT NULL,
     `tamano_bytes` INTEGER NULL,
@@ -52,6 +53,7 @@ CREATE TABLE `vouchers`.`vouchers` (
     `ip_carga` VARCHAR(191) NULL,
 
     INDEX `vouchers_categoria_idx`(`categoria`),
+    INDEX `vouchers_tipo_documento_idx`(`tipo_documento`),
     INDEX `vouchers_usuario_id_idx`(`usuario_id`),
     INDEX `vouchers_eliminado_en_idx`(`eliminado_en`),
     PRIMARY KEY (`voucher_id`)

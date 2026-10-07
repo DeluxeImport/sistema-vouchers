@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { config, CATEGORIAS_SUBIBLES, type Categoria } from "../config.js";
+import { config, errorCombinacion, type Categoria, type CategoriaContable, type TipoDocumento } from "../config.js";
 import { requireServiceToken } from "../middleware/botAuth.js";
 import { categoriasDe, esAdmin } from "../utils/permisos.js";
 import { procesarYGuardar } from "../services/voucherService.js";
@@ -78,6 +78,8 @@ router.get("/usuario/:telegramUserId", async (req, res) => {
 const metaSchema = z.object({
   telegramUserId: z.string().min(1),
   categoria: z.string().min(1),
+  // Ausente = voucher; NOTA / FACTURA / BOLETA = documento.
+  tipoDocumento: z.string().optional(),
   chatId: z.string().optional(),
   fecha: z.string().optional(),
   descripcion: z.string().optional(),
@@ -86,18 +88,21 @@ router.post("/vouchers", upload.single("imagen"), async (req, res) => {
   const parse = metaSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Datos invalidos" });
   const { telegramUserId, chatId, fecha, descripcion } = parse.data;
-  const categoria = parse.data.categoria.toUpperCase() as Categoria;
+  const categoria = parse.data.categoria.toUpperCase();
+  const tipoDocumento = parse.data.tipoDocumento ? parse.data.tipoDocumento.toUpperCase() : null;
 
   const usuario = await prisma.usuario.findUnique({ where: { telegramUserId } });
   if (!usuario) return res.status(404).json({ error: "Cuenta no vinculada" });
   if (!usuario.puedeSubir) return res.status(403).json({ error: "No tiene permiso para subir" });
 
-  if (!CATEGORIAS_SUBIBLES.includes(categoria as (typeof CATEGORIAS_SUBIBLES)[number])) {
-    return res.status(400).json({ error: "Categoria invalida" });
-  }
+  const errorDatos = errorCombinacion(categoria, tipoDocumento);
+  if (errorDatos) return res.status(400).json({ error: errorDatos });
   const permitidas = categoriasDe(usuario);
-  if (!permitidas.includes(categoria)) {
+  if (!permitidas.includes(categoria as Categoria)) {
     return res.status(403).json({ error: "No tiene permiso para esta categoria" });
+  }
+  if (tipoDocumento && !permitidas.includes(tipoDocumento as Categoria)) {
+    return res.status(403).json({ error: "No tiene permiso para este tipo de documento" });
   }
 
   const archivo = req.file;
@@ -116,7 +121,8 @@ router.post("/vouchers", upload.single("imagen"), async (req, res) => {
   try {
     const resultado = await procesarYGuardar(
       { buffer: archivo.buffer, mimetype: archivo.mimetype, size: archivo.size },
-      categoria,
+      categoria as CategoriaContable,
+      tipoDocumento as TipoDocumento | null,
       usuario.id,
       getIp(req),
       { fechaVoucher: isNaN(fechaVoucher?.getTime() ?? NaN) ? null : fechaVoucher, descripcion }
@@ -125,7 +131,7 @@ router.post("/vouchers", upload.single("imagen"), async (req, res) => {
       req,
       "UPLOAD",
       usuario.id,
-      `canal=telegram chat=${chatId ?? "-"} area=${areaGrupo ?? "-"} ${categoria}: ${resultado.voucherId}`
+      `canal=telegram chat=${chatId ?? "-"} area=${areaGrupo ?? "-"} ${tipoDocumento ?? "VOUCHER"} ${categoria}: ${resultado.voucherId}`
     );
     return res.status(201).json({ voucher: resultado });
   } catch (e) {

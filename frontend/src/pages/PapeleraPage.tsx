@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, mensajeError } from "../api/client";
 import AuthImage from "../components/AuthImage";
-import { COLOR_CATEGORIA, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
+import { colorCategoria, etiquetaCategoria, etiquetaRegistro } from "../lib/categorias";
 
 interface PapeleraItem {
   voucherId: string;
-  categoria: Categoria;
+  categoria: string;
+  tipoDocumento?: string | null;
   formato?: string | null;
   fechaCarga: string;
   fechaVoucher?: string | null;
@@ -78,7 +79,7 @@ export default function PapeleraPage() {
               {esPdf(v) ? (
                 <div className="w-full h-40 bg-red-50 flex flex-col items-center justify-center text-red-600 opacity-80">
                   <div className="text-3xl font-bold">PDF</div>
-                  <div className="text-xs mt-1 text-red-500">{LABEL_CATEGORIA[v.categoria]} electronica</div>
+                  <div className="text-xs mt-1 text-red-500">{v.tipoDocumento ? `${etiquetaCategoria(v.tipoDocumento)} electrónica` : "Voucher"}</div>
                 </div>
               ) : (
                 <AuthImage voucherId={v.voucherId} className="w-full h-40 object-cover opacity-80" />
@@ -93,13 +94,13 @@ export default function PapeleraPage() {
             </div>
             <div className="p-3 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-semibold" style={{ color: COLOR_CATEGORIA[v.categoria] }}>
+                <span className="font-mono text-xs font-semibold" style={{ color: colorCategoria(v.categoria) }}>
                   {v.voucherId}
                 </span>
                 <div className="flex gap-1">
                   {esPdf(v) && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600">PDF</span>}
-                  <span className="text-[10px] px-2 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[v.categoria] }}>
-                    {LABEL_CATEGORIA[v.categoria]}
+                  <span className="text-[10px] px-2 py-0.5 rounded text-white truncate max-w-[9rem]" style={{ background: colorCategoria(v.categoria) }} title={etiquetaRegistro(v.categoria, v.tipoDocumento)}>
+                    {v.tipoDocumento ? `${etiquetaCategoria(v.tipoDocumento)} · ` : ""}{etiquetaRegistro(v.categoria, v.tipoDocumento)}
                   </span>
                 </div>
               </div>

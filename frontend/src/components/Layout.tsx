@@ -1,25 +1,33 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../store/auth";
-import { GRUPOS_VOUCHER, CATEGORIAS_SUELTAS, CATEGORIAS_DOCUMENTO, LABEL_CATEGORIA, type Categoria } from "../lib/categorias";
+import { CATEGORIAS_LEGADO, TIPOS_DOCUMENTO, etiquetaCategoria, gruposPermitidos } from "../lib/categorias";
+import { usePermisosSubida } from "../pages/SubirVoucherPage";
 
-// Item de una (sub)categoria dentro del submenu desplegado de Galería.
-function ItemCategoria({ to, label, activo }: { to: string; label: string; activo: boolean }) {
+// Item de un submenu desplegado (Subir / Galería).
+function ItemSubmenu({ to, label, activo, color }: { to: string; label: string; activo: boolean; color?: string }) {
   return (
     <Link
       to={to}
-      className={`block rounded-md px-2 py-1 text-xs transition ${
+      className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs transition ${
         activo ? "bg-acento text-white" : "text-slate-300 hover:bg-white/10"
       }`}
     >
-      {label}
+      {color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
+      <span className="truncate">{label}</span>
     </Link>
   );
+}
+
+function TituloSubmenu({ children }: { children: React.ReactNode }) {
+  return <div className="px-2 pt-2 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{children}</div>;
 }
 
 export default function Layout() {
   const { usuario, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { hayVoucher, hayDocumento } = usePermisosSubida();
 
   // Cada item se muestra solo si el usuario tiene el permiso correspondiente.
   const navItems = [
@@ -30,24 +38,36 @@ export default function Layout() {
     { to: "/perfil", label: "Perfil", icon: "☺", ver: true },
   ].filter((it) => it.ver);
 
-  // Submenu de Galería: se despliega al entrar a /galeria, con Compras,
-  // Servicios y Servicios Fijos mostrando sus subcategorias debajo, y el
-  // resto (Recompras, Alquiler, Nota, Factura, Boleta) como enlaces directos.
+  // "Subir" es un desplegable: General (todo junto), Subir Voucher y Subir
+  // Documento. Se abre solo al estar en /subir* y se puede abrir/cerrar a mano.
+  const enSubir = location.pathname.startsWith("/subir");
+  const [subirAbierto, setSubirAbierto] = useState(enSubir);
+  useEffect(() => {
+    if (enSubir) setSubirAbierto(true);
+  }, [enSubir]);
+
+  // Submenu de Galería: por tipo (vouchers / documentos) y por categoria principal.
   const esAdmin = !!usuario?.esAdmin;
   const permitidas = new Set(usuario?.categorias ?? []);
-  const puedeVer = (c: Categoria) => esAdmin || permitidas.has(c);
-  const gruposGaleria = GRUPOS_VOUCHER.map((g) => ({
-    ...g,
-    subcategorias: g.subcategorias.filter(puedeVer),
-  })).filter((g) => g.subcategorias.length > 0);
-  const sueltasGaleria = [...CATEGORIAS_SUELTAS, ...CATEGORIAS_DOCUMENTO].filter(puedeVer);
+  const puedeVer = (c: string) => esAdmin || permitidas.has(c);
+  const gruposGaleria = gruposPermitidos(puedeVer);
+  const tiposGaleria = TIPOS_DOCUMENTO.filter(puedeVer);
+  const hayLegado = [...CATEGORIAS_LEGADO, ...TIPOS_DOCUMENTO].some(puedeVer);
   const galeriaAbierta = !!usuario?.puedeVerGaleria && location.pathname.startsWith("/galeria");
-  const categoriaActiva = new URLSearchParams(location.search).get("categoria");
+  const params = new URLSearchParams(location.search);
+  const tipoActivo = params.get("tipo");
+  const grupoActivo = params.get("grupo");
+  const sinFiltroGaleria = !tipoActivo && !grupoActivo && !params.get("categoria");
 
   const salir = async () => {
     await logout();
     navigate("/login");
   };
+
+  const claseItem = (activo: boolean) =>
+    `flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm transition ${
+      activo ? "bg-acento text-white" : "text-slate-300 hover:bg-white/10"
+    }`;
 
   return (
     <div className="min-h-screen md:flex">
@@ -59,48 +79,80 @@ export default function Layout() {
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((it) => (
             <div key={it.to}>
-              <NavLink
-                to={it.to}
-                end={it.to === "/"}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm transition ${
-                    isActive ? "bg-acento text-white" : "text-slate-300 hover:bg-white/10"
-                  }`
-                }
-              >
-                <span className="text-lg">{it.icon}</span>
-                {it.label}
-              </NavLink>
+              {it.to === "/subir" ? (
+                <button
+                  type="button"
+                  onClick={() => setSubirAbierto((v) => !v)}
+                  className={claseItem(enSubir)}
+                  aria-expanded={subirAbierto}
+                >
+                  <span className="text-lg">{it.icon}</span>
+                  <span className="flex-1 text-left">{it.label}</span>
+                  <span className={`text-xs transition-transform ${subirAbierto ? "rotate-90" : ""}`}>▸</span>
+                </button>
+              ) : (
+                <NavLink to={it.to} end={it.to === "/"} className={({ isActive }) => claseItem(isActive)}>
+                  <span className="text-lg">{it.icon}</span>
+                  {it.label}
+                </NavLink>
+              )}
+
+              {it.to === "/subir" && subirAbierto && (
+                <div className="mt-1 mb-2 ml-5 space-y-0.5 border-l border-white/10 pl-3">
+                  <ItemSubmenu to="/subir" label="General" activo={location.pathname === "/subir"} />
+                  {hayVoucher && (
+                    <ItemSubmenu to="/subir/voucher" label="Subir Voucher" activo={location.pathname === "/subir/voucher"} />
+                  )}
+                  {hayDocumento && (
+                    <ItemSubmenu
+                      to="/subir/documento"
+                      label="Subir Documento"
+                      activo={location.pathname === "/subir/documento"}
+                    />
+                  )}
+                </div>
+              )}
 
               {it.to === "/galeria" && galeriaAbierta && (
                 <div className="mt-1 mb-2 ml-5 space-y-0.5 border-l border-white/10 pl-3">
-                  <ItemCategoria to="/galeria" label="Todas" activo={!categoriaActiva} />
-                  {gruposGaleria.map((g) => (
-                    <div key={g.id} className="pt-1.5">
-                      <div className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                        {g.label}
+                  <ItemSubmenu to="/galeria" label="Todas" activo={sinFiltroGaleria} />
+                  <ItemSubmenu to="/galeria?tipo=VOUCHER" label="Vouchers" activo={tipoActivo === "VOUCHER" && !grupoActivo} />
+                  {tiposGaleria.length > 0 && (
+                    <>
+                      <ItemSubmenu
+                        to="/galeria?tipo=DOCUMENTO"
+                        label="Documentos"
+                        activo={tipoActivo === "DOCUMENTO" && !grupoActivo}
+                      />
+                      <div className="ml-3 space-y-0.5">
+                        {tiposGaleria.map((t) => (
+                          <ItemSubmenu
+                            key={t}
+                            to={`/galeria?tipo=${t}`}
+                            label={etiquetaCategoria(t)}
+                            activo={tipoActivo === t && !grupoActivo}
+                          />
+                        ))}
                       </div>
-                      {g.subcategorias.map((c) => (
-                        <ItemCategoria
-                          key={c}
-                          to={`/galeria?categoria=${c}`}
-                          label={LABEL_CATEGORIA[c]}
-                          activo={categoriaActiva === c}
-                        />
-                      ))}
-                    </div>
+                    </>
+                  )}
+                  {gruposGaleria.length > 0 && <TituloSubmenu>Por categoría</TituloSubmenu>}
+                  {gruposGaleria.map((g) => (
+                    <ItemSubmenu
+                      key={g.id}
+                      to={`/galeria?grupo=${g.id}`}
+                      label={g.label}
+                      color={g.color}
+                      activo={grupoActivo === g.id && !tipoActivo}
+                    />
                   ))}
-                  {sueltasGaleria.length > 0 && (
-                    <div className="pt-1.5 space-y-0.5">
-                      {sueltasGaleria.map((c) => (
-                        <ItemCategoria
-                          key={c}
-                          to={`/galeria?categoria=${c}`}
-                          label={LABEL_CATEGORIA[c]}
-                          activo={categoriaActiva === c}
-                        />
-                      ))}
-                    </div>
+                  {hayLegado && (
+                    <ItemSubmenu
+                      to="/galeria?grupo=LEGADO"
+                      label="Categorías anteriores"
+                      color="#94A3B8"
+                      activo={grupoActivo === "LEGADO" && !tipoActivo}
+                    />
                   )}
                 </div>
               )}
@@ -125,7 +177,7 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Bottom tabs mobile */}
+      {/* Bottom tabs mobile (en /subir las pestañas Todo/Voucher/Documento van dentro de la pagina) */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex justify-around py-2 z-10">
         {navItems.map((it) => (
           <NavLink

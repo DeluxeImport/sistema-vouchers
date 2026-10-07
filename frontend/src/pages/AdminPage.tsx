@@ -3,11 +3,11 @@ import { api, mensajeError } from "../api/client";
 import {
   CATEGORIAS,
   CATEGORIAS_LEGADO,
-  CATEGORIAS_DOCUMENTO,
-  GRUPOS_VOUCHER,
-  CATEGORIAS_SUELTAS,
-  COLOR_CATEGORIA,
-  LABEL_CATEGORIA,
+  GRUPOS,
+  TIPOS_DOCUMENTO,
+  bloquesPorSubgrupo,
+  colorCategoria,
+  etiquetaCategoria,
   type Categoria,
 } from "../lib/categorias";
 
@@ -36,61 +36,158 @@ const PERMISOS: { key: PermKey; label: string }[] = [
 ];
 
 function ChipCategoria({ c, activo, onClick }: { c: Categoria; activo: boolean; onClick: () => void }) {
+  const color = colorCategoria(c);
   return (
     <button
       type="button"
       onClick={onClick}
-      className="px-3 py-1.5 rounded-lg text-sm border-2"
-      style={
-        activo
-          ? { background: COLOR_CATEGORIA[c], color: "white", borderColor: COLOR_CATEGORIA[c] }
-          : { borderColor: COLOR_CATEGORIA[c], color: COLOR_CATEGORIA[c] }
-      }
+      className="px-2.5 py-1 rounded-lg text-xs border-2 text-left"
+      style={activo ? { background: color, color: "white", borderColor: color } : { borderColor: `${color}88`, color }}
     >
-      {LABEL_CATEGORIA[c]}
+      {etiquetaCategoria(c)}
     </button>
   );
 }
 
-// Selector de categorias permitidas, agrupado (Compras/Servicios/Servicios
-// Fijos muestran sus subcategorias juntas en vez de una lista plana).
-function SelectorCategorias({ seleccionadas, onToggle }: { seleccionadas: Categoria[]; onToggle: (c: Categoria) => void }) {
-  const chip = (c: Categoria) => (
-    <ChipCategoria key={c} c={c} activo={seleccionadas.includes(c)} onClick={() => onToggle(c)} />
-  );
+// Bloque de un grupo de categorias con boton para marcar/desmarcar todo el grupo.
+function BloqueGrupo({
+  titulo,
+  color,
+  categorias,
+  seleccionadas,
+  onChange,
+}: {
+  titulo: string;
+  color?: string;
+  categorias: readonly Categoria[];
+  seleccionadas: Categoria[];
+  onChange: (lista: Categoria[]) => void;
+}) {
+  const marcadas = categorias.filter((c) => seleccionadas.includes(c)).length;
+  const todas = marcadas === categorias.length;
+  const alternarGrupo = () =>
+    onChange(
+      todas
+        ? seleccionadas.filter((c) => !categorias.includes(c))
+        : [...seleccionadas, ...categorias.filter((c) => !seleccionadas.includes(c))]
+    );
+  const alternar = (c: Categoria) =>
+    onChange(seleccionadas.includes(c) ? seleccionadas.filter((x) => x !== c) : [...seleccionadas, c]);
+
   return (
-    <div className="space-y-3">
-      {GRUPOS_VOUCHER.map((g) => (
-        <div key={g.id}>
-          <div className="text-xs font-semibold text-slate-500 uppercase mb-1">{g.label}</div>
-          <div className="flex flex-wrap gap-2">{g.subcategorias.map(chip)}</div>
+    <div className="rounded-lg border border-slate-200 p-2.5">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 uppercase">
+          {color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />}
+          {titulo}
+          <span className="font-normal normal-case text-slate-400">
+            ({marcadas}/{categorias.length})
+          </span>
         </div>
-      ))}
-      <div>
-        <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Otras categorías</div>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIAS_SUELTAS.map(chip)}
-          {CATEGORIAS_DOCUMENTO.map(chip)}
+        <button type="button" onClick={alternarGrupo} className="text-xs text-acento hover:underline">
+          {todas ? "Quitar todas" : "Marcar todas"}
+        </button>
+      </div>
+      {categorias.length > 1 && (
+        <div className="space-y-1.5">
+          {bloquesPorSubgrupo(categorias).map((b, i) => (
+            <div key={b.titulo ?? `b${i}`}>
+              {b.titulo && <div className="text-[11px] text-slate-400 mb-1">{b.titulo}</div>}
+              <div className="flex flex-wrap gap-1.5">
+                {b.categorias.map((c) => (
+                  <ChipCategoria key={c} c={c} activo={seleccionadas.includes(c)} onClick={() => alternar(c)} />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-      <div>
-        <div className="text-xs font-semibold text-slate-400 uppercase mb-1">Legado (vouchers históricos)</div>
-        <div className="flex flex-wrap gap-2">{CATEGORIAS_LEGADO.map(chip)}</div>
-      </div>
+      )}
     </div>
   );
 }
 
+// Selector de categorias permitidas, agrupado por categoria principal.
+// Los tipos de documento definen ademas que documentos puede subir/ver.
+function SelectorCategorias({
+  seleccionadas,
+  onChange,
+}: {
+  seleccionadas: Categoria[];
+  onChange: (lista: Categoria[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-3 text-xs">
+        <button type="button" className="text-acento hover:underline" onClick={() => onChange([...CATEGORIAS])}>
+          Marcar todo
+        </button>
+        <button type="button" className="text-slate-500 hover:underline" onClick={() => onChange([])}>
+          Quitar todo
+        </button>
+      </div>
+      <BloqueGrupo
+        titulo="Tipos de documento (puede subir/ver documentos)"
+        categorias={TIPOS_DOCUMENTO}
+        seleccionadas={seleccionadas}
+        onChange={onChange}
+      />
+      <div className="grid gap-2 lg:grid-cols-2">
+        {GRUPOS.map((g) => (
+          <BloqueGrupo
+            key={g.id}
+            titulo={g.label}
+            color={g.color}
+            categorias={g.categorias}
+            seleccionadas={seleccionadas}
+            onChange={onChange}
+          />
+        ))}
+      </div>
+      <details className="rounded-lg border border-dashed border-slate-200 p-2.5">
+        <summary className="cursor-pointer text-xs font-semibold text-slate-400 uppercase">
+          Categorías anteriores (vouchers históricos)
+        </summary>
+        <div className="mt-2">
+          <BloqueGrupo
+            titulo="Anteriores"
+            categorias={CATEGORIAS_LEGADO}
+            seleccionadas={seleccionadas}
+            onChange={onChange}
+          />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+// Resumen compacto en la tabla: cuantas subcategorias tiene de cada grupo.
 function CategoriaChips({ categorias }: { categorias: string[] }) {
-  if (categorias.length === CATEGORIAS.length) return <span className="text-xs text-slate-500">Todas</span>;
+  const set = new Set(categorias);
+  if (CATEGORIAS.every((c) => set.has(c))) return <span className="text-xs text-slate-500">Todas</span>;
   if (categorias.length === 0) return <span className="text-xs text-red-500">Ninguna</span>;
+  const tipos = TIPOS_DOCUMENTO.filter((t) => set.has(t));
   return (
     <div className="flex flex-wrap gap-1">
-      {categorias.map((c) => (
-        <span key={c} className="text-[10px] px-1.5 py-0.5 rounded text-white" style={{ background: COLOR_CATEGORIA[c as Categoria] }}>
-          {LABEL_CATEGORIA[c as Categoria]}
+      {tipos.length > 0 && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+          Docs: {tipos.map((t) => etiquetaCategoria(t)).join(", ")}
         </span>
-      ))}
+      )}
+      {GRUPOS.map((g) => {
+        const n = g.categorias.filter((c) => set.has(c)).length;
+        if (n === 0) return null;
+        return (
+          <span
+            key={g.id}
+            className="text-[10px] px-1.5 py-0.5 rounded text-white"
+            style={{ background: g.color }}
+            title={g.label}
+          >
+            {g.label.split(" ")[0]}
+            {n < g.categorias.length ? ` ${n}/${g.categorias.length}` : ""}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -117,9 +214,6 @@ export default function AdminPage() {
     api.get("/users/admin/list").then(({ data }) => setUsuarios(data.usuarios)).catch((e) => setError(mensajeError(e)));
   };
   useEffect(cargar, []);
-
-  const toggleCat = (lista: Categoria[], c: Categoria): Categoria[] =>
-    lista.includes(c) ? lista.filter((x) => x !== c) : [...lista, c];
 
   const crear = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,7 +311,7 @@ export default function AdminPage() {
               <label className="label">Categorías permitidas</label>
               <SelectorCategorias
                 seleccionadas={nuevo.categorias}
-                onToggle={(c) => setNuevo({ ...nuevo, categorias: toggleCat(nuevo.categorias, c) })}
+                onChange={(lista) => setNuevo({ ...nuevo, categorias: lista })}
               />
             </div>
           )}
@@ -310,7 +404,7 @@ export default function AdminPage() {
                   <label className="label">Categorías permitidas</label>
                   <SelectorCategorias
                     seleccionadas={editando.categorias as Categoria[]}
-                    onToggle={(c) => setEditando({ ...editando, categorias: toggleCat(editando.categorias as Categoria[], c) })}
+                    onChange={(lista) => setEditando({ ...editando, categorias: lista })}
                   />
                 </div>
               )}
