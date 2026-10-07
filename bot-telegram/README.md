@@ -1,8 +1,10 @@
 # Sistema Vouchers — Bot de Telegram (Fase 1)
 
 Bot de Telegram que registra automáticamente los comprobantes que la gente
-manda a un grupo, sin pasar por la web. Proyecto aparte del repo
-`sistema-vouchers`; se conecta a él únicamente por su API (`/api/bot/*`).
+manda a un grupo, sin pasar por la web. Vive en la carpeta `bot-telegram/`
+del repo `sistema-vouchers` (antes era el repo aparte `Bouchers-Bot-oficial`),
+pero es un programa independiente en Python: se conecta al sistema únicamente
+por su API (`/api/bot/*`), nunca a la base de datos.
 
 No decide permisos: siempre resuelve el usuario real a partir del
 `telegram_user_id` vinculado y reutiliza exactamente las mismas categorías
@@ -58,7 +60,7 @@ bancaria, exportación a Contabilidad.
    - `API_BASE_URL`: URL del backend de Sistema Vouchers (`http://localhost:3000/api`
      en desarrollo).
    - `BOT_SERVICE_TOKEN`: **debe ser idéntico** al `BOT_SERVICE_TOKEN` del
-     `.env` del backend (repo `sistema-vouchers`) — es el secreto compartido
+     `backend/.env` de este mismo repo — es el secreto compartido
      entre ambos servicios.
    - `CHAT_IDS_PERMITIDOS`: lista de `chat_id` separados por coma. Vacío =
      acepta fotos de cualquier chat (solo para pruebas locales).
@@ -66,6 +68,7 @@ bancaria, exportación a Contabilidad.
 ## Instalar y correr
 
 ```bash
+cd bot-telegram
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # Linux/Mac
@@ -87,8 +90,8 @@ pytest
 
 Las pruebas cubren la lógica pura (etiquetas de categoría, expiración de
 subidas pendientes). No hay pruebas de integración contra Telegram real ni
-contra la API de Sistema Vouchers en este repo — eso se probó manualmente
-contra el backend al construir los endpoints `/api/bot/*` (ver ese repo).
+contra la API de Sistema Vouchers — eso se probó manualmente contra el
+backend al construir los endpoints `/api/bot/*` (`backend/src/routes/bot.ts`).
 
 ## Estructura
 

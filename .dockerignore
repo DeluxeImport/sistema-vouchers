@@ -10,3 +10,4 @@ backend/storage/vouchers/**/*.heic
 **/.env
 .git
 *.log
+bot-telegram
