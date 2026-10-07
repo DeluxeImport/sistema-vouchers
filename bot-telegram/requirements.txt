@@ -1,0 +1,14 @@
+python-telegram-bot==22.8
+httpx==0.28.1
+python-dotenv==1.0.1
+
+# Deteccion de fecha del comprobante (QR primero, OCR de respaldo).
+# PaddleOCR (pedido originalmente) no publica version para Python 3.14;
+# se uso EasyOCR en su lugar -- ver el comentario en bot/extraccion.py.
+opencv-python-headless==5.0.0.93
+numpy==2.5.3
+easyocr==1.7.2
+
+# Deteccion de regiones (comprobante / fecha / monto) con YOLO. Sin un modelo
+# entrenado en modelos/comprobantes.pt no se usa (ver entrenamiento/README.md).
+ultralytics==8.4.172
