@@ -20,6 +20,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from . import deteccion
+
 _detector_qr = cv2.QRCodeDetector()
 _lector_ocr = None  # se crea recien al primer uso (carga modelos, es lento)
 
@@ -60,6 +62,14 @@ _MESES = {
     "julio": 7, "agosto": 8, "setiembre": 9, "septiembre": 9, "octubre": 10,
     "noviembre": 11, "diciembre": 12,
 }
+# Abreviaturas que usan las constancias de apps bancarias (BCP, Yape...):
+# "02 oct 2026 - 10:35 a.m." debajo del numero de operacion. Se exigen
+# exactas (sin tolerancia de OCR): en palabras de 3-4 letras, 1-2 letras de
+# diferencia ya convierten cualquier palabra comun ("con", "del") en un mes.
+_MESES_ABREV = {
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7,
+    "ago": 8, "set": 9, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dic": 12,
+}
 
 # Separador tolerante: el OCR a veces confunde "/" con "," "'" "." etc.
 _SEP = r"\s*[/\-.,'´ʼ]\s*"
@@ -77,6 +87,10 @@ _PATRON_NUMERICO = re.compile(r"\b(\d{1,2})" + _SEP + r"(\d{1,2})" + _SEP + r"("
 # ("septiembre" -> "sptlembre"); exigir coincidencia exacta descartaba
 # fechas que en realidad se leyeron casi perfecto.
 _PATRON_TEXTO = re.compile(r"\b(\d{1,2})\s+de\s+([a-zA-Zá-úÁ-Ú0-9]+)\s+de\s+(" + _ANIO + r")\b", re.IGNORECASE)
+# Formato corto de constancias bancarias (BCP, Yape): "02 oct 2026",
+# "02 Oct. 2026", "2 octubre, 2026" -- sin "de" y con el mes solo en letras
+# (un mes numerico sin "de" seria cualquier trio de numeros sueltos).
+_PATRON_CORTO = re.compile(r"\b(\d{1,2})\s+([a-zA-Zá-úÁ-Ú]{3,10})\.?,?\s+(" + _ANIO + r")\b", re.IGNORECASE)
 
 
 def _distancia_edicion(a: str, b: str) -> int:
@@ -132,7 +146,7 @@ def _candidatos_texto(texto: str) -> list[str]:
             if not (1 <= mes <= 12):
                 continue
         else:
-            mes = _mes_mas_parecido(mes_texto)
+            mes = _MESES_ABREV.get(mes_texto.lower()) or _mes_mas_parecido(mes_texto)
             if mes is None:
                 continue
         try:
@@ -142,13 +156,44 @@ def _candidatos_texto(texto: str) -> list[str]:
     return candidatos
 
 
+def _candidatos_corto(texto: str) -> list[str]:
+    candidatos = []
+    for m in _PATRON_CORTO.finditer(texto):
+        dia, mes_texto, anio = m.groups()
+        mes_texto = mes_texto.lower()
+        mes = _MESES_ABREV.get(mes_texto)
+        if mes is None and len(mes_texto) >= 5:
+            mes = _mes_mas_parecido(mes_texto)
+        if mes is None:
+            continue
+        try:
+            candidatos.append(datetime(int(anio.replace(" ", "")), mes, int(dia)).strftime("%Y-%m-%d"))
+        except ValueError:
+            continue
+    return candidatos
+
+
+def _anio_actual() -> int:
+    return datetime.now().year
+
+
 def fecha_de_texto(texto: str) -> Optional[str]:
     """Busca una fecha en espanol dentro de un texto libre (salida de OCR).
     Devuelve YYYY-MM-DD, o None si no encuentra ninguna fecha, o si encuentra
     mas de una fecha DISTINTA (ej. un recibo con una fecha tachada y
     corregida al lado, donde el OCR lee ambas) -- en ese caso es mas seguro
     dejar que la persona confirme a mano que adivinar cual es la correcta."""
-    candidatos = _candidatos_numericos(texto) or _candidatos_texto(texto)
+    # Un comprobante que se sube hoy es de este año o, como mucho, del
+    # anterior. Fechas mas viejas casi siempre son otra cosa impresa en la
+    # foto -- caso real: recibos fotografiados sobre billetes, que traen su
+    # fecha de emision ("15 de diciembre de 2022"). Mejor descartarlas que
+    # proponerlas como fecha del comprobante.
+    anio_actual = _anio_actual()
+    candidatos = []
+    for extraer in (_candidatos_numericos, _candidatos_texto, _candidatos_corto):
+        candidatos = [c for c in extraer(texto) if anio_actual - 1 <= int(c[:4]) <= anio_actual]
+        if candidatos:
+            break
     unicos = set(candidatos)
     if len(unicos) == 1:
         return unicos.pop()
@@ -259,6 +304,36 @@ def detectar_fecha(imagen_bytes: bytes) -> Optional[str]:
     if img is None:
         return None
 
+    # Con un modelo YOLO entrenado, primero se lee solo la zona de la fecha
+    # y despues solo el comprobante (sin billetes ni fondo). Sin modelo,
+    # detectar_regiones devuelve {} y se va directo a la foto completa.
+    regiones = deteccion.detectar_regiones(img)
+    for recorte in regiones.get("fecha", []):
+        fecha = _fecha_por_rotaciones(_agrandar(recorte))
+        if fecha:
+            return fecha
+    for recorte in regiones.get("comprobante", []):
+        fecha = _fecha_por_rotaciones(recorte)
+        if fecha:
+            return fecha
+    return _fecha_por_rotaciones(img)
+
+
+# Un recorte chico (solo la linea de la fecha) se lee mejor agrandado: en
+# pruebas con un recibo manuscrito, agrandar 3x hizo que el OCR leyera bien
+# el dia que en la foto completa confundia con letras.
+_ALTO_MINIMO_RECORTE = 150
+
+
+def _agrandar(img):
+    alto = img.shape[0]
+    if alto >= _ALTO_MINIMO_RECORTE:
+        return img
+    escala = _ALTO_MINIMO_RECORTE / max(alto, 1)
+    return cv2.resize(img, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC)
+
+
+def _fecha_por_rotaciones(img) -> Optional[str]:
     for grados in _ROTACIONES:
         try:
             texto = _leer_texto_ocr(_rotar(img, grados))

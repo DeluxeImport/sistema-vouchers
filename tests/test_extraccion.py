@@ -102,6 +102,71 @@ def test_fecha_de_texto_anio_con_espacio_de_formulario_preimpreso():
     assert fecha_de_texto("Trujillo, 25 de septiembre de 202 6.") == "2026-09-25"
 
 
+def test_fecha_de_texto_constancia_bcp_mes_abreviado_bajo_numero_de_operacion():
+    # Constancia BCP: la fecha va debajo del numero de operacion, con el mes
+    # abreviado y sin "de".
+    texto = "Constancia de transferencia\nS/ 150.00\nN° de operación 01234567\n02 oct 2026 - 10:35 a.m."
+    assert fecha_de_texto(texto) == "2026-10-02"
+
+
+def test_fecha_de_texto_mes_abreviado_con_punto_y_mayuscula():
+    assert fecha_de_texto("Operación 98765432\n15 Set. 2026, 08:12 p.m.") == "2026-09-15"
+
+
+def test_fecha_de_texto_mes_completo_sin_de():
+    assert fecha_de_texto("Operación 98765432\n2 octubre 2026") == "2026-10-02"
+
+
+def test_fecha_de_texto_abreviatura_con_de():
+    assert fecha_de_texto("02 de oct de 2026") == "2026-10-02"
+
+
+def test_fecha_de_texto_pago_de_servicio_bcp_real():
+    # Texto de una constancia real "Pago de servicio exitoso" (app BCP).
+    texto = (
+        "¡Pago de servicio exitoso!\nMonto pagado\nS/ 157.40\n"
+        "Martes, 29 setiembre 2026 - 8:19 p. m.\nPagado a HIDRANDINA SA\n"
+        "Código de usuario 60378861\nN° recibo: PER.202609 S/ 157.40\n"
+        "Desde Ahorro Soles **** 3039\nN° de operación 06108838"
+    )
+    assert fecha_de_texto(texto) == "2026-09-29"
+
+
+def test_fecha_de_texto_yape_real():
+    # Texto de una constancia real de Yape.
+    texto = (
+        "¡Yapeaste!\nS/ 179.90\nSarvia Nar*\n29 set. 2026 | 8:31 p.m.\n"
+        "CÓDIGO DE SEGURIDAD 5 3 6\nNro. de celular *** *** 747\n"
+        "Destino Yape\nNro. de operación 20995536"
+    )
+    assert fecha_de_texto(texto) == "2026-09-29"
+
+
+def test_fecha_de_texto_ignora_fechas_de_billetes():
+    # Caso real: recibo de caja a mano fotografiado sobre billetes. El OCR no
+    # logra leer la fecha manuscrita, pero si las fechas impresas de los
+    # billetes -- no deben proponerse como fecha del comprobante.
+    texto = (
+        "Recibo DE CAJA EGReSO\nTrujillo do de 202 2\n"
+        "19 DE FEBRERO DE 2015\n28 DE OCTUBRE DE 2004\n15 DE DICIEMBRE DE 2022"
+    )
+    assert fecha_de_texto(texto) is None
+
+
+def test_fecha_de_texto_fecha_del_recibo_gana_a_la_del_billete():
+    texto = "Trujillo, 2 de octubre de 2026\n15 DE DICIEMBRE DE 2022"
+    assert fecha_de_texto(texto) == "2026-10-02"
+
+
+def test_fecha_de_texto_acepta_comprobante_del_anio_anterior():
+    assert fecha_de_texto("Fecha 28/12/2025") == "2025-12-28"
+
+
+def test_fecha_de_texto_palabra_comun_no_se_confunde_con_mes_abreviado():
+    # "con" esta a 1-2 letras de "oct"/"jun": no debe tomarse como mes.
+    assert fecha_de_texto("Pago 12 con 2026 puntos") is None
+
+
 # --- detectar_fecha (punta a punta con un QR real, sin necesitar OCR) --
 
 

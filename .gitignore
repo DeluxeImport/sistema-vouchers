@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+
+# YOLO: modelos entrenados, fotos de comprobantes (datos personales) y
+# resultados de entrenamiento -- nada de esto va al repo.
+*.pt
+entrenamiento/dataset/
+entrenamiento/runs/
