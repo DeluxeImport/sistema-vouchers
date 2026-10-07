@@ -3,58 +3,58 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 model Usuario {
-  id            String    @id
-  nombre        String
-  username      String    @unique
-  passwordHash  String    @map("password_hash")
-  rol           String    @default("USUARIO")
+  id                   String    @id
+  nombre               String
+  username             String    @unique
+  passwordHash         String    @map("password_hash")
+  rol                  String    @default("USUARIO")
   // CSV de categorias permitidas. null = todas (admin). Vacio = ninguna.
-  categoriasPermitidas String? @map("categorias_permitidas")
-  puedeSubir       Boolean @default(true) @map("puede_subir")
-  puedeVerGaleria  Boolean @default(true) @map("puede_ver_galeria")
-  puedeVerDashboard Boolean @default(true) @map("puede_ver_dashboard")
-  puedeDescargar   Boolean @default(true) @map("puede_descargar")
-  debeCambiar   Boolean   @default(true) @map("debe_cambiar")
-  totpSecret    String?   @map("totp_secret")
-  totpActivo    Boolean   @default(false) @map("totp_activo")
-  backupCodes   String?   @map("backup_codes")
-  intentosFallidos Int    @default(0) @map("intentos_fallidos")
-  bloqueadoHasta DateTime? @map("bloqueado_hasta")
-  ultimoAcceso  DateTime? @map("ultimo_acceso")
-  creadoEn      DateTime  @default(now()) @map("creado_en")
-  actualizado   DateTime  @updatedAt @map("actualizado")
+  categoriasPermitidas String?   @map("categorias_permitidas") @db.Text
+  puedeSubir           Boolean   @default(true) @map("puede_subir")
+  puedeVerGaleria      Boolean   @default(true) @map("puede_ver_galeria")
+  puedeVerDashboard    Boolean   @default(true) @map("puede_ver_dashboard")
+  puedeDescargar       Boolean   @default(true) @map("puede_descargar")
+  debeCambiar          Boolean   @default(true) @map("debe_cambiar")
+  totpSecret           String?   @map("totp_secret")
+  totpActivo           Boolean   @default(false) @map("totp_activo")
+  backupCodes          String?   @map("backup_codes") @db.Text
+  intentosFallidos     Int       @default(0) @map("intentos_fallidos")
+  bloqueadoHasta       DateTime? @map("bloqueado_hasta")
+  ultimoAcceso         DateTime? @map("ultimo_acceso")
+  creadoEn             DateTime  @default(now()) @map("creado_en")
+  actualizado          DateTime  @updatedAt @map("actualizado")
   // Cuenta de Telegram vinculada (bot de registro automatico). null = no vinculada.
-  telegramUserId String? @unique @map("telegram_user_id")
+  telegramUserId       String?   @unique @map("telegram_user_id")
 
-  vouchers Voucher[]
-  sesiones Sesion[]
-  auditLogs AuditLog[]
+  vouchers          Voucher[]
+  sesiones          Sesion[]
+  auditLogs         AuditLog[]
   tokensVinculacion TokenVinculacion[]
 
   @@map("usuarios")
 }
 
 model Voucher {
-  voucherId     String   @id @map("voucher_id")
-  usuarioId     String   @map("usuario_id")
+  voucherId     String    @id @map("voucher_id")
+  usuarioId     String    @map("usuario_id")
   categoria     String
-  nombreArchivo String   @map("nombre_archivo")
-  rutaArchivo   String   @map("ruta_archivo")
-  tamanoBytes   Int?     @map("tamano_bytes")
+  nombreArchivo String    @map("nombre_archivo")
+  rutaArchivo   String    @map("ruta_archivo") @db.VarChar(500)
+  tamanoBytes   Int?      @map("tamano_bytes")
   formato       String?
-  fechaCarga    DateTime @default(now()) @map("fecha_carga")
+  fechaCarga    DateTime  @default(now()) @map("fecha_carga")
   // Fecha real del voucher (puede diferir de la fecha de subida) y nota libre.
   fechaVoucher  DateTime? @map("fecha_voucher")
-  descripcion   String?
+  descripcion   String?   @db.Text
   // Papelera (soft delete): null = activo. Si tiene fecha, esta en papelera y
   // se borra definitivamente a los 15 dias.
   eliminadoEn   DateTime? @map("eliminado_en")
-  ipCarga       String?  @map("ip_carga")
+  ipCarga       String?   @map("ip_carga")
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
@@ -76,8 +76,8 @@ model AuditLog {
   usuarioId String?  @map("usuario_id")
   accion    String
   ip        String?
-  userAgent String?  @map("user_agent")
-  detalles  String?
+  userAgent String?  @map("user_agent") @db.Text
+  detalles  String?  @db.Text
   timestamp DateTime @default(now())
 
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
@@ -90,7 +90,7 @@ model Sesion {
   usuarioId String   @map("usuario_id")
   tokenHash String   @map("token_hash")
   ip        String?
-  userAgent String?  @map("user_agent")
+  userAgent String?  @map("user_agent") @db.Text
   expiraEn  DateTime @map("expira_en")
   creadoEn  DateTime @default(now()) @map("creado_en")
 
@@ -117,8 +117,8 @@ model TokenVinculacion {
 // Solo informativo (area/centro de costo para reportes); NO filtra categorias,
 // eso depende unicamente de los permisos del usuario que sube la foto.
 model GrupoTelegram {
-  chatId           String @id @map("chat_id")
-  areaOCentroCosto String @map("area_o_centro_costo")
+  chatId           String   @id @map("chat_id")
+  areaOCentroCosto String   @map("area_o_centro_costo")
   creadoEn         DateTime @default(now()) @map("creado_en")
 
   @@map("grupos_telegram")
